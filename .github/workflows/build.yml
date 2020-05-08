@@ -1,0 +1,30 @@
+# Build dockerfile on change
+name: Build Docker (env/gatk4.Dockerfile)
+
+on:
+  push:
+    paths:
+    - 'env/genome.Dockerfile'
+    - '.github/workflows/build.yml'
+  pull_request:
+    paths:
+    - 'env/genome.Dockerfile'
+    - '.github/workflows/build.yml'
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v2
+
+    - name: Build and Publish
+      uses: elgohr/Publish-Docker-Github-Action@master
+      with:
+        name: andersenlab/genome
+        tag: "${{ steps.current-time.formattedTime }}"
+        username: ${{ secrets.DOCKER_HUB_USER }}
+        password: ${{ secrets.DOCKER_HUB_PASSWORD }}
+        snapshot: true
+        dockerfile: genome.Dockerfile
+        workdir: "env"
+        tags: "latest"
