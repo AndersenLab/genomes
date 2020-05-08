@@ -1,5 +1,5 @@
 # Build dockerfile on change
-name: Build Docker (env/gatk4.Dockerfile)
+name: Build Docker
 
 on:
   push:
@@ -20,7 +20,7 @@ jobs:
     - name: Build and Publish
       uses: elgohr/Publish-Docker-Github-Action@master
       with:
-        name: andersenlab/genome
+        name: andersenlab/genomes
         tag: "${{ steps.current-time.formattedTime }}"
         username: ${{ secrets.DOCKER_HUB_USER }}
         password: ${{ secrets.DOCKER_HUB_PASSWORD }}
