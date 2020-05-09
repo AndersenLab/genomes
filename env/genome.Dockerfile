@@ -16,7 +16,7 @@ RUN conda create -n genome \
                         r-tidyverse \
                         r-data.table \
                         r-vroom \
-                        genometools=1.2.1 \
+                        genometools=1.6.1 \
     && conda clean -a
 ENV PATH /opt/conda/envs/genome/bin:$PATH
 RUN conda env export --name genome > genome.yml
