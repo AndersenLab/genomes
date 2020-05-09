@@ -13,6 +13,8 @@ RUN conda create -n genome \
                         xsv=0.13.0 \
                         snpeff=4.3.1t \
                         parallel=20200322 \
+                        r-tidyverse \
+                        r-data.table \
     && conda clean -a
 ENV PATH /opt/conda/envs/genome/bin:$PATH
 RUN conda env export --name genome > genome.yml
