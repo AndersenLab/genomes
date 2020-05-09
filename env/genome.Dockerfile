@@ -15,6 +15,7 @@ RUN conda create -n genome \
                         parallel=20200322 \
                         r-tidyverse \
                         r-data.table \
+                        r-vroom \
     && conda clean -a
 ENV PATH /opt/conda/envs/genome/bin:$PATH
 RUN conda env export --name genome > genome.yml
