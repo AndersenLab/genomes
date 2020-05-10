@@ -26,6 +26,40 @@ By default, the pipeline will generate reference genome indices and annotations 
 * `c_briggsae/PRJNA10731`
 * `c_tropicalis/PRJNA53597`
 
+## Output
+
+Outputs are nested under `params.output` with the following structure:
+
+```
+c_elegans                                                   (species)
+└── PRJNA13758                                              (project)
+    └── WS276                                               (build)
+        ├── c_elegans.PRJNA13758.WS276.genome.dict          (dict file)
+        ├── c_elegans.PRJNA13758.WS276.genome.fa.gz         (fasta)
+        ├── c_elegans.PRJNA13758.WS276.genome.fa.gz.amb     (bwa index)
+        ├── c_elegans.PRJNA13758.WS276.genome.fa.gz.ann     (bwa index)
+        ├── c_elegans.PRJNA13758.WS276.genome.fa.gz.bwt     (bwa index)
+        ├── c_elegans.PRJNA13758.WS276.genome.fa.gz.fai     (samtools faidx index)
+        ├── c_elegans.PRJNA13758.WS276.genome.fa.gz.gzi     (bwa index)
+        ├── c_elegans.PRJNA13758.WS276.genome.fa.gz.pac     (bwa index)
+        ├── c_elegans.PRJNA13758.WS276.genome.fa.gz.sa      (bwa index)
+        ├── csq
+        │   ├── c_elegans.PRJNA13758.WS276.csq.gff3.gz      (CSQ annotation GFF3)
+        │   └── c_elegans.PRJNA13758.WS276.csq.gff3.gz.tbi  (tabix index)
+        └── snpeff
+            ├── c_elegans.PRJNA13758.WS276                  (tabix index)
+            │   ├── genes.gtf.gz                            (Reference GTF)
+            │   ├── sequences.fa                            (fasta genome (unzipped))
+            │   └── snpEffectPredictor.bin                  (snpEff annotation db)
+            └── snpEff.config                               (snpEff configuration file)
+
+```
+
+## Notes
+
+* The SNPeff databases are not collected together in one location as is often the case. Instead, they are stored individually with their own configuration files.
+* The GFF3 files for some species are not as developed as _C. elegans_. As a consequence, the biotype is inferred from the Attributes column of the GFF. See `bin/format_csq.R` for more details.
+
 ## Options
 
 ### `-profile`

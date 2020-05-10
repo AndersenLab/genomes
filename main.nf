@@ -45,6 +45,8 @@ include format_csq from './modules/annotation.module.nf'
 
 process fetch_projects {
 
+    executor 'local'
+
     publishDir "${params.output}/", mode: 'copy'
 
     output:
