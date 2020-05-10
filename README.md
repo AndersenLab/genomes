@@ -20,7 +20,7 @@ The pipeline can be run locally or on Quest. For example:
 nextflow run main.nf -resume -profile local --wb_version=WS276 --projects=c_elegans/PRJNA13758
 ```
 
-By default, the pipeline will generate indices for:
+By default, the pipeline will generate reference genome indices and annotations for:
 
 * `c_elegans/PRJNA13758` - N2 based reference genome
 * `c_briggsae/PRJNA10731`
