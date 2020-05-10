@@ -21,7 +21,7 @@ WORMBASE_PREFIX = "ftp://ftp.wormbase.org/pub/wormbase/releases"
 params.output="genome"
 params.wb_version="WS276"
 params.projects="""c_elegans/PRJNA13758,c_briggsae/PRJNA10731,c_tropicalis/PRJNA53597"""
-params.snpeff_config = "${workflow.projectDir}/data/snpeff_config.txt"
+params.snpeff_config = "${workflow.projectDir}/data/snpeff_config_base.txt"
 project_list = params.projects.split(",")
 
 println "Downloading ${params.wb_version} --> ${project_list}"
@@ -29,11 +29,8 @@ println "Downloading ${params.wb_version} --> ${project_list}"
 /* Includes */
 // Downloads
 include { download_url as download_genome;
-          download_url as download_protein;
           download_url as download_gtf;
-          download_url as download_gff3;
-          download_url as download_mrna;
-          download_url as download_url_test } from './modules/download.module.nf'
+          download_url as download_gff3; } from './modules/download.module.nf'
 
 // Genome
 include gzip_to_bgzip from './modules/genome.module.nf'
@@ -43,9 +40,8 @@ include create_sequence_dictionary from './modules/genome.module.nf'
 
 // Annotation
 include snpeff_db from './modules/annotation.module.nf'
-include { decompress as decompress_genome;
-          decompress as decompress_protein;
-          decompress as decompress_transcript; } from './modules/annotation.module.nf'
+include { decompress as decompress_genome; } from './modules/annotation.module.nf'
+include format_csq from './modules/annotation.module.nf'
 
 process fetch_projects {
 
@@ -104,20 +100,16 @@ workflow {
     format_dl(genome_set, "genomic.fa.gz") | download_genome | gzip_to_bgzip | (bwa_index & samtools_faidx & create_sequence_dictionary)
 
     // Download
-    format_dl(genome_set, "mRNA_transcripts.fa.gz") | download_mrna
-    format_dl(genome_set, "protein.fa.gz") | download_protein
     format_dl(genome_set, "canonical_geneset.gtf.gz") | download_gtf
     format_dl(genome_set, "annotations.gff3.gz") | download_gff3
     
     /* SnpEff */
     genome_eff = decompress_genome(download_genome.out).map { row, genome -> [row.name, row, genome] }
-    protein_eff = decompress_protein(download_protein.out).map { row, protein -> [row.name, protein] }
-    transcript_eff = decompress_transcript(download_mrna.out).map { row, transcript -> [row.name, transcript] }
-
-    // gtf does not need to be decompressed
-    gff3_eff = download_gff3.out.map { row, gff3 -> [row.name, gff3] }
-    genome_eff.join(protein_eff)
-              .join(transcript_eff)
-              .join(gff3_eff)
+    gtf_eff = download_gtf.out.map { row, gtf -> [row.name, gtf] }
+    genome_eff.join(gtf_eff)
               .combine(Channel.fromPath(params.snpeff_config)) | snpeff_db
+
+    /* CSQ Annotations */
+    download_gff3.out | format_csq
+    
 }
