@@ -68,7 +68,7 @@ process format_csq {
     '''
         # to prep the gff3 for bcftools csq
         gzip -dc in.gff.gz | \
-            awk '$2 ~ "WormBase.*"' | \
+            awk '$2 ~ "WormBase"' | \
             sed -e 's/ID=Transcript:/ID=transcript:/g' \
                 -e 's/ID=Gene:/ID=gene:/g' \
                 -e 's/Parent=Transcript:/Parent=transcript:/g' \
