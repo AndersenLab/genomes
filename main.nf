@@ -42,6 +42,7 @@ include create_sequence_dictionary from './modules/genome.module.nf'
 include snpeff_db from './modules/annotation.module.nf'
 include { decompress as decompress_genome; } from './modules/annotation.module.nf'
 include format_csq from './modules/annotation.module.nf'
+include extract_lcrs from './modules/annotation.module.nf'
 
 process fetch_projects {
 
@@ -111,5 +112,8 @@ workflow {
 
     /* CSQ Annotations */
     download_gff3.out | format_csq
-    
+
+    /* Extract LCRs and other annotations */
+    download_gff3.out | extract_lcrs
+
 }

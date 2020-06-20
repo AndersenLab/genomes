@@ -87,3 +87,34 @@ process format_csq {
     '''
 
 }
+
+process extract_lcrs {
+    /*
+        Extract low complexity regions for:
+
+        dust
+        RepeatMasker
+    */
+
+    publishDir "${params.output}/${row.out_dir}/lcr", mode: 'copy'
+
+    input:
+        tuple val(row), path("in.gff.gz")
+
+    output:
+        path("${row.name}.dust.bed.gz")
+        path("${row.name}.dust.bed.gz.tbi")
+        path("${row.name}.repeat_masker.bed.gz")
+        path("${row.name}.repeat_masker.bed.gz.tbi")
+
+    shell:
+    '''
+        gzip -dc in.gff.gz | \
+        awk -v OFS="\t" '$2 == "dust" { print $1, $4, $5, $2 > "!{row.name}.dust.bed" } 
+                         $2 == "RepeatMasker" {  print $1, $4, $5, $2 > "!{row.name}.repeat_masker.bed" }'
+        bgzip !{row.name}.dust.bed
+        bgzip !{row.name}.repeat_masker.bed
+        tabix -f -p bed !{row.name}.dust.bed.gz
+        tabix -f -p bed !{row.name}.repeat_masker.bed.gz
+    '''
+}
