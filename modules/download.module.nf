@@ -2,6 +2,8 @@
 
 process download_url {
 
+    executor 'local'
+
     tag { "${row.species}/${row.project}" }
 
     input:
