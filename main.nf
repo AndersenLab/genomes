@@ -8,7 +8,8 @@ and from wormbase and process them for downstream analysis.
 Author: Daniel E. Cook
 */
 nextflow.preview.dsl=2
-assert System.getenv("NXF_VER") == "20.01.0-rc1"
+//assert System.getenv("NXF_VER") == "20.01.0-rc1"
+assert nextflow.version.matches('20.0+')
 
 log.info "Genome Management"
 
