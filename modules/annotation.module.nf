@@ -63,28 +63,27 @@ process format_csq {
     output:
         path("${row.name}.csq.gff3.gz")
         path("${row.name}.csq.gff3.gz.tbi")
+        path("${row.name}.AA_Scores.tsv")
+        path("${row.name}.AA_Length.tsv")
 
-    shell:
-    '''
-        # to prep the gff3 for bcftools csq
-        gzip -dc in.gff.gz | \
-            awk '$2 ~ "WormBase.*"' | \
-            sed -e 's/ID=Transcript:/ID=transcript:/g' \
-                -e 's/ID=Gene:/ID=gene:/g' \
-                -e 's/Parent=Transcript:/Parent=transcript:/g' \
-                -e 's/Parent=Gene:/Parent=gene:/g' \
-                -e 's/Parent=Pseudogene:/Parent=transcript:/g' > prep.gff
-        
-        format_csq.R
+    """
+        # Ryan's fix for formatting gff3 for bcsq
+        zcat in.gff.gz | grep -P "\tWormBase\t" > simple.wormbase.gff3
 
-        {
-            gzip -dc in.gff.gz | grep '^##';
-            bedtools sort -i out.gff3;
-        } > !{row.name}.csq.gff3
-        
-        bgzip !{row.name}.csq.gff3
-        tabix -p gff !{row.name}.csq.gff3.gz
-    '''
+        Rscript --vanilla ${workflow.projectDir}/bin/bcsq_gff_format.R
+
+        cp fixed.wormbase.gff3 ${row.name}.csq.gff3
+        bgzip ${row.name}.csq.gff3
+        tabix -p gff ${row.name}.csq.gff3.gz
+
+        # also run AA_scores and AA_length
+        Rscript --vanilla ${workflow.projectDir}/bin/AA_Scores_Table.R ${workflow.projectDir}/bin/BLOSUM62
+        mv AA_Scores.tsv ${row.name}.AA_Scores.tsv
+
+        Rscript --vanilla ${workflow.projectDir}/bin/AA_Length.R ${row.name}.csq.gff3.gz
+        mv gff_AA_Length.tsv ${row.name}.AA_Length.tsv
+
+    """
 
 }
 

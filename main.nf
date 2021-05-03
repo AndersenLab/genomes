@@ -8,7 +8,8 @@ and from wormbase and process them for downstream analysis.
 Author: Daniel E. Cook
 */
 nextflow.preview.dsl=2
-assert System.getenv("NXF_VER") == "20.01.0-rc1"
+//assert System.getenv("NXF_VER") == "20.01.0-rc1"
+assert nextflow.version.matches('20.0+')
 
 log.info "Genome Management"
 
@@ -18,7 +19,7 @@ WORMBASE_PREFIX = "ftp://ftp.wormbase.org/pub/wormbase/releases"
 /*
     Params
 */
-params.output="genome"
+//params.output="genomes"
 params.wb_version="WS276"
 params.projects="""c_elegans/PRJNA13758,c_briggsae/PRJNA10731,c_tropicalis/PRJNA53597"""
 params.snpeff_config = "${workflow.projectDir}/data/snpeff_config_base.txt"
@@ -95,7 +96,7 @@ workflow {
                           // Create output directory stub
                           row.name = "${row.species}.${row.project}.${params.wb_version}"
                           row.genome = "${row.name}.genome";
-                          row.out_dir = "${row.species}/${row.project}/${params.wb_version}";
+                          row.out_dir = "${row.species}/genomes/${row.project}/${params.wb_version}";
                           row;
                       }
 
