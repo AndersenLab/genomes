@@ -26,32 +26,55 @@ By default, the pipeline will generate reference genome indices and annotations 
 * `c_briggsae/PRJNA10731`
 * `c_tropicalis/PRJNA53597`
 
+### Requirements
+
+If running pipeline on Quest, you must first load `singularity` to access the docker container:
+
+```bash
+module load singularity
+```
+
+Nextflow version 20.01+ is required to run this pipeline. If you have a previous version of Nextflow, you must either update or if you are on Quest you can load a shared conda environment that runs the appropriate Nextflow version for this project:
+
+```bash
+module load python/anaconda3.6
+source activate /projects/b1059/software/conda_envs/nf20_env
+```
+
 ## Output
 
 Outputs are nested under `params.output` with the following structure:
 
 ```
-c_elegans                                                   (species)
-└── PRJNA13758                                              (project)
-    └── WS276                                               (build)
-        ├── c_elegans.PRJNA13758.WS276.genome.dict          (dict file)
-        ├── c_elegans.PRJNA13758.WS276.genome.fa.gz         (fasta)
-        ├── c_elegans.PRJNA13758.WS276.genome.fa.gz.amb     (bwa index)
-        ├── c_elegans.PRJNA13758.WS276.genome.fa.gz.ann     (bwa index)
-        ├── c_elegans.PRJNA13758.WS276.genome.fa.gz.bwt     (bwa index)
-        ├── c_elegans.PRJNA13758.WS276.genome.fa.gz.fai     (samtools faidx index)
-        ├── c_elegans.PRJNA13758.WS276.genome.fa.gz.gzi     (bwa index)
-        ├── c_elegans.PRJNA13758.WS276.genome.fa.gz.pac     (bwa index)
-        ├── c_elegans.PRJNA13758.WS276.genome.fa.gz.sa      (bwa index)
-        ├── csq
-        │   ├── c_elegans.PRJNA13758.WS276.csq.gff3.gz      (CSQ annotation GFF3)
-        │   └── c_elegans.PRJNA13758.WS276.csq.gff3.gz.tbi  (tabix index)
-        └── snpeff
-            ├── c_elegans.PRJNA13758.WS276                  (tabix index)
-            │   ├── genes.gtf.gz                            (Reference GTF)
-            │   ├── sequences.fa                            (fasta genome (unzipped))
-            │   └── snpEffectPredictor.bin                  (snpEff annotation db)
-            └── snpEff.config                               (snpEff configuration file)
+c_elegans                                                                   (species)
+└── genomes
+    └── PRJNA13758                                                          (project)
+        └── WS276                                                           (build)
+            ├── c_elegans.PRJNA13758.WS276.genome.dict                      (dict file)
+            ├── c_elegans.PRJNA13758.WS276.genome.fa.gz                     (fasta)
+            ├── c_elegans.PRJNA13758.WS276.genome.fa.gz.amb                 (bwa index)
+            ├── c_elegans.PRJNA13758.WS276.genome.fa.gz.ann                 (bwa index)
+            ├── c_elegans.PRJNA13758.WS276.genome.fa.gz.bwt                 (bwa index)
+            ├── c_elegans.PRJNA13758.WS276.genome.fa.gz.fai                 (samtools faidx index)
+            ├── c_elegans.PRJNA13758.WS276.genome.fa.gz.gzi                 (bwa index)
+            ├── c_elegans.PRJNA13758.WS276.genome.fa.gz.pac                 (bwa index)
+            ├── c_elegans.PRJNA13758.WS276.genome.fa.gz.sa                  (bwa index)
+            ├── csq
+            │   ├── c_elegans.PRJNA13758.WS276.csq.gff3.gz                  (CSQ annotation GFF3)
+            │   ├── c_elegans.PRJNA13758.WS276.csq.gff3.gz.tbi              (tabix index)
+            │   ├── c_elegans.PRJNA13758.WS276.AA_Length.tsv                (protein lengths)
+            │   └── c_elegans.PRJNA13758.WS276.AA_Scores.tsv                (blosum and grantham scores)
+            ├── lcr
+            │   ├── c_elegans.PRJNA13758.WS276.repeat_masker.bed.gz         (low complexity regions)
+            │   ├── c_elegans.PRJNA13758.WS276.repeat_masker.bed.gz.tbi     (tabix index)
+            │   ├── c_elegans.PRJNA13758.WS276.dust.bed.gz                  (low complexity regions)
+            │   └── c_elegans.PRJNA13758.WS276.dust.bed.gz.tbi              (tabix index)
+            └── snpeff
+                ├── c_elegans.PRJNA13758.WS276                              (tabix index)
+                │   ├── genes.gtf.gz                                        (Reference GTF)
+                │   ├── sequences.fa                                        (fasta genome (unzipped))
+                │   └── snpEffectPredictor.bin                              (snpEff annotation db)
+                └── snpEff.config                                           (snpEff configuration file)
 
 ```
 
