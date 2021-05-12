@@ -49,7 +49,7 @@ process snpeff_db {
 
 }
 
-
+// aa length currently doesn't work unless c.e. need to potentially change gff for other species
 process format_csq {
     /*
         Generate a GFF file for CSQ annotation by BCFTools
@@ -67,6 +67,8 @@ process format_csq {
         path("${row.name}.AA_Length.tsv")
 
     """
+    if [[ ${row.species} = "c_elegans" ]]
+    then
         # Ryan's fix for formatting gff3 for bcsq
         zcat in.gff.gz | grep -P "\tWormBase\t" > simple.wormbase.gff3
 
@@ -76,12 +78,34 @@ process format_csq {
         bgzip ${row.name}.csq.gff3
         tabix -p gff ${row.name}.csq.gff3.gz
 
-        # also run AA_scores and AA_length
-        Rscript --vanilla ${workflow.projectDir}/bin/AA_Scores_Table.R ${workflow.projectDir}/bin/BLOSUM62
-        mv AA_Scores.tsv ${row.name}.AA_Scores.tsv
-
         Rscript --vanilla ${workflow.projectDir}/bin/AA_Length.R ${row.name}.csq.gff3.gz
         mv gff_AA_Length.tsv ${row.name}.AA_Length.tsv
+    else
+        # to prep the gff3 for bcftools csq
+        gzip -dc in.gff.gz | \
+            awk '\$2 ~ "WormBase.*"' | \
+            sed -e 's/ID=Transcript:/ID=transcript:/g' \
+                -e 's/ID=Gene:/ID=gene:/g' \
+                -e 's/Parent=Transcript:/Parent=transcript:/g' \
+                -e 's/Parent=Gene:/Parent=gene:/g' \
+                -e 's/Parent=Pseudogene:/Parent=transcript:/g' > prep.gff
+        
+        format_csq.R
+        {
+            gzip -dc in.gff.gz | grep '^##';
+            bedtools sort -i out.gff3;
+        } > ${row.name}.csq.gff3
+        
+        bgzip ${row.name}.csq.gff3
+        tabix -p gff ${row.name}.csq.gff3.gz
+
+        # AA lengths currently doesn't work for non c.e need to udpate
+        touch ${row.name}.AA_Length.tsv
+    fi
+
+    # also run AA_scores and AA_length
+    Rscript --vanilla ${workflow.projectDir}/bin/AA_Scores_Table.R ${workflow.projectDir}/bin/BLOSUM62
+    mv AA_Scores.tsv ${row.name}.AA_Scores.tsv
 
     """
 
