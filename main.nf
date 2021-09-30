@@ -21,6 +21,7 @@ WORMBASE_PREFIX = "ftp://ftp.wormbase.org/pub/wormbase/releases"
 params.snpeff_config = "${workflow.projectDir}/data/snpeff_config_base.txt"
 params.genome = null // set for manual genome not from wormbase
 params.gff = null // set for manual genome not from wormbase
+params.output = "${workflow.projectDir}/genomes-test/"
 
 if(!params.genome) {
     params.wb_version="WS276"
