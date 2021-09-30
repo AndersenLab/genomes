@@ -51,6 +51,9 @@ process snpeff_db {
 
 // aa length currently doesn't work unless c.e. need to potentially change gff for other species
 process format_csq {
+
+    tag { "${row.name}" }
+
     /*
         Generate a GFF file for CSQ annotation by BCFTools
     */
@@ -107,6 +110,100 @@ process format_csq {
     Rscript --vanilla ${workflow.projectDir}/bin/AA_Scores_Table.R ${workflow.projectDir}/bin/BLOSUM62
     mv AA_Scores.tsv ${row.name}.AA_Scores.tsv
 
+    """
+
+}
+
+// aa length currently doesn't work unless c.e. need to potentially change gff for other species
+process format_csq_manual {
+
+    /*
+        Generate a GFF file for CSQ annotation by BCFTools
+    */
+
+    publishDir "${out_dir}/csq", mode: 'copy'
+
+    input:
+        tuple val("name"), val("out_dir"), path("gff_file")
+
+    output:
+        path("${name}.csq.gff3.gz")
+        path("${name}.csq.gff3.gz.tbi")
+        path("${name}.AA_Scores.tsv")
+        path("${name}.AA_Length.tsv")
+
+    """
+    cp ${gff_file} ${name}.csq.gff3.gz
+    tabix -p gff ${name}.csq.gff3.gz
+
+    Rscript --vanilla ${workflow.projectDir}/bin/AA_Length.R ${name}.csq.gff3.gz
+    mv gff_AA_Length.tsv ${name}.AA_Length.tsv
+    
+    # also run AA_scores and AA_length
+    Rscript --vanilla ${workflow.projectDir}/bin/AA_Scores_Table.R ${workflow.projectDir}/bin/BLOSUM62
+    mv AA_Scores.tsv ${name}.AA_Scores.tsv
+
+    """
+
+}
+
+// needed for snpeff conversion
+process convert_gff_to_gtf {
+
+    container 'docker://quay.io/biocontainers/agat:0.8.0--pl5262hdfd78af_0'
+
+    input:
+        tuple val(name), val("out_dir"), \
+        path("${name}/sequences.fa.gz"), \
+        path("${name}/genes.gff.gz"), \
+        path("snpeff_config_base.txt")
+
+    output:
+        tuple val(name), val("out_dir"), \
+        path("${name}/sequences.fa.gz"), \
+        path("${name}/genes.gtf.gz"), \
+        path("snpeff_config_base.txt")
+
+    """
+    agat_convert_sp_gff2gtf.pl --gff ${name}/genes.gff.gz -o ${name}/genes.gtf.gz
+    
+    """
+
+
+}
+
+// use gff instead of gtf to create snpeff config manually
+process snpeff_db_manual {
+
+    publishDir "${out_dir}/snpeff", mode: 'copy'
+
+    input:
+        tuple val(name), val("out_dir"), \
+              path("${name}/sequences.fa.gz"), \
+              path("${name}/genes.gtf.gz"), \
+              path("snpeff_config_base.txt")
+
+    output:
+        path("snpEff.config")
+        path("${name}/snpEffectPredictor.bin")
+        path("${name}/genes.gtf.gz")
+        path("${name}/sequences.fa")
+
+    """
+    sp=`echo ${name} | cut -d '.' -f 1`
+    gunzip ${name}/sequences.fa.gz
+        {
+            cat snpeff_config_base.txt;
+            echo "${name}.genome : \$sp";
+            has_mtdna=\$(grep 'MtDNA' ${name}/sequences.fa | wc -l)
+            if (( \${has_mtdna} > 0 )); then
+                echo "${name}.MtDNA.codonTable : Invertebrate_Mitochondrial"
+            fi;
+        } > snpEff.config
+        snpEff build -c snpEff.config \
+                     -dataDir . \
+                     -gtf22 \
+                     -v ${name}
     """
 
 }
