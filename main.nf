@@ -136,6 +136,11 @@ workflow {
 
         /* Extract LCRs and other annotations */
         download_gff3.out | extract_lcrs
+
+        // get gene and transcript tracks for cendr (elegans only right now)
+        if(${row.species} == "c_elegans") {
+            download_gff3.out | cendr_browser_tracks
+        }
     } else {
         myFile = file("${params.genome}")
         println("Managing genome: ${myFile.getBaseName()}")
@@ -203,4 +208,54 @@ def download(ch, fname) {
          format_url(row, fname)]
     }
 }
+
+// download big bed file for gene and transcript tracks for CeNDR
+// looks like this file isonly currently supported for elegans and maybe briggsae but not tropicalis.
+process cendr_browser_tracks {
+
+    publishDir "${params.output}/", mode: 'copy'
+
+    input:
+        tuple val(row), path("gff.gz")
+
+    output:
+        tuple path("*.bed.gz"), path("*.bed.gz.tbi")
+
+    """
+    function zip_index {
+        bgzip -f ${1}
+        tabix ${1}.gz
+    }
+
+    # Generate the transcripts track;
+    # Confusingly, this track is derived from 
+    # one called elegans_genes on wormbase.
+    # Add parenthetical gene name for transcripts.
+    curl ftp://ftp.wormbase.org/pub/wormbase/releases/current-production-release/MULTI_SPECIES/hub/elegans/elegans_genes_${params.wb_version} > gene_file.bb
+    BigBedToBed gene_file.bb tmp.bed
+    sortBed -i tmp.bed > elegans_transcripts_${params.wb_version}.bed
+    bgzip -f elegans_transcripts_${params.wb_version}.bed.gz
+    tabix elegans_transcripts_${params.wb_version}.bed.gz
+    rm tmp.bed
+
+    # Generate Gene Track BED File
+    tmp_gff=\$(mktemp)
+    tmp_gff2=\$(mktemp)
+    tmp_bed3=\$(mktemp)
+    gzip -dc ${gff.gz} | \
+    grep 'locus' | \
+    awk '\$2 == "WormBase" && \$3 == "gene"' > "${tmp_gff}"
+    sortBed -i "${tmp_gff}" > "${tmp_gff2}"
+
+    # Install with conda install gawk
+    convert2bed -i gff < "${tmp_gff2}" > ${tmp_bed3}
+    gawk -v OFS='\t' '{ match(\$0, "locus=([^;\t]+)", f); \$4=f[1]; print \$1, \$2, \$3, \$4, 100, \$6  }' "${tmp_bed3}" | \
+    uniq > elegans_gene.${params.wb_version}.bed
+    zip_index elegans_gene.${params.wb_version}.bed
+
+    """
+
+}
+
+
 
