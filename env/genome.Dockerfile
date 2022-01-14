@@ -19,6 +19,7 @@ RUN conda create -n genome \
                         bedtools \ 
                         bedops \
                         ucsc-bigbedtobed \
+                        gawk \
     && conda clean -a
 ENV PATH /opt/conda/envs/genome/bin:$PATH
 RUN conda env export --name genome > genome.yml
