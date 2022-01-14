@@ -22,8 +22,8 @@ jobs:
       with:
         name: andersenlab/genomes
         tag: "${{ steps.current-time.formattedTime }}"
-        username: ${{ secrets.DOCKER_HUB_USER }}
-        password: ${{ secrets.DOCKER_HUB_PASSWORD }}
+        username: ${{ secrets.KSE_DOCKER_USER }}
+        password: ${{ secrets.KSE_DOCKER_PASS }}
         snapshot: true
         dockerfile: genome.Dockerfile
         workdir: "env"
