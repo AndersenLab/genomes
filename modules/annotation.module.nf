@@ -68,6 +68,7 @@ process format_csq {
         path("${row.name}.csq.gff3.gz.tbi")
         path("${row.name}.AA_Scores.tsv")
         path("${row.name}.AA_Length.tsv")
+        path("*.gff")
 
     """
     if [[ ${row.species} = "c_elegans" ]]
@@ -110,6 +111,12 @@ process format_csq {
     Rscript --vanilla ${workflow.projectDir}/bin/AA_Scores_Table.R ${workflow.projectDir}/bin/BLOSUM62
     mv AA_Scores.tsv ${row.name}.AA_Scores.tsv
 
+    # also get gene file for nemascan
+    cp ${row.name}.csq.gff3.gz test.gff.gz
+    gunzip test.gff.gz
+    Rscript --vanilla ${workflow.projectDir}/bin/gene_file_nemascan.R test.gff ${row.species}
+    rm test.gff
+
     """
 
 }
@@ -122,76 +129,62 @@ process format_csq_manual {
     */
 
     publishDir "${out_dir}/csq", mode: 'copy'
+    // publishDir "${params.output}/csq", mode: 'copy' // use for debug test
 
     input:
         tuple val("name"), val("out_dir"), path("gff_file")
 
     output:
-        path("${name}.csq.gff3.gz")
-        path("${name}.csq.gff3.gz.tbi")
+        // path("${name}.csq.gff3.gz")
+        // path("${name}.csq.gff3.gz.tbi")
+        path("${name}.csq.gff3")
+        // path("${name}.csq.gff3.tbi")
         path("${name}.AA_Scores.tsv")
         path("${name}.AA_Length.tsv")
+        path("*.gff")
 
     """
-    cp ${gff_file} ${name}.csq.gff3.gz
-    tabix -p gff ${name}.csq.gff3.gz
+    cp ${gff_file} ${name}.csq.gff3
+    # tabix -p gff ${name}.csq.gff3
 
-    Rscript --vanilla ${workflow.projectDir}/bin/AA_Length.R ${name}.csq.gff3.gz
+    Rscript --vanilla ${workflow.projectDir}/bin/AA_Length.R ${name}.csq.gff3
     mv gff_AA_Length.tsv ${name}.AA_Length.tsv
     
     # also run AA_scores and AA_length
     Rscript --vanilla ${workflow.projectDir}/bin/AA_Scores_Table.R ${workflow.projectDir}/bin/BLOSUM62
     mv AA_Scores.tsv ${name}.AA_Scores.tsv
 
+    # also get gene file for nemascan
+    sp=`echo ${name} | cut -d '.' -f 1`
+    Rscript --vanilla ${workflow.projectDir}/bin/gene_file_nemascan.R ${name}.csq.gff3 \$sp
+
     """
 
 }
 
-// needed for snpeff conversion
-process convert_gff_to_gtf {
-
-    container 'docker://quay.io/biocontainers/agat:0.8.0--pl5262hdfd78af_0'
-
-    input:
-        tuple val(name), val("out_dir"), \
-        path("${name}/sequences.fa.gz"), \
-        path("${name}/genes.gff.gz"), \
-        path("snpeff_config_base.txt")
-
-    output:
-        tuple val(name), val("out_dir"), \
-        path("${name}/sequences.fa.gz"), \
-        path("${name}/genes.gtf.gz"), \
-        path("snpeff_config_base.txt")
-
-    """
-    agat_convert_sp_gff2gtf.pl --gff ${name}/genes.gff.gz -o ${name}/genes.gtf.gz
-    
-    """
-
-
-}
 
 // use gff instead of gtf to create snpeff config manually
 process snpeff_db_manual {
 
     publishDir "${out_dir}/snpeff", mode: 'copy'
+    // publishDir "${params.output}/snpeff", mode: 'copy' // use for debug test
 
     input:
         tuple val(name), val("out_dir"), \
-              path("${name}/sequences.fa.gz"), \
-              path("${name}/genes.gtf.gz"), \
+              // path("${name}/sequences.fa.gz"), \
+              // path("${name}/genes.gff.gz"), \
+              path("${name}/sequences.fa"), \
+              path("${name}/genes.gff"), \
               path("snpeff_config_base.txt")
 
     output:
         path("snpEff.config")
         path("${name}/snpEffectPredictor.bin")
-        path("${name}/genes.gtf.gz")
+        path("${name}/genes.gff")
         path("${name}/sequences.fa")
 
     """
     sp=`echo ${name} | cut -d '.' -f 1`
-    gunzip ${name}/sequences.fa.gz
         {
             cat snpeff_config_base.txt;
             echo "${name}.genome : \$sp";
@@ -202,7 +195,7 @@ process snpeff_db_manual {
         } > snpEff.config
         snpEff build -c snpEff.config \
                      -dataDir . \
-                     -gtf22 \
+                     -gff3 \
                      -v ${name}
     """
 
@@ -238,3 +231,4 @@ process extract_lcrs {
         tabix -f -p bed !{row.name}.repeat_masker.bed.gz
     '''
 }
+

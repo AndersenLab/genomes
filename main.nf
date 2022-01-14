@@ -21,7 +21,8 @@ WORMBASE_PREFIX = "ftp://ftp.wormbase.org/pub/wormbase/releases"
 params.snpeff_config = "${workflow.projectDir}/data/snpeff_config_base.txt"
 params.genome = null // set for manual genome not from wormbase
 params.gff = null // set for manual genome not from wormbase
-params.output = "${workflow.projectDir}/genomes-test/"
+params.output = "${workflow.projectDir}/genomes_test"
+// params.output = "/projects/b1059/data/${params.species}/genomes/"
 
 if(!params.genome) {
     params.wb_version="WS276"
@@ -53,7 +54,6 @@ include { decompress as decompress_genome; } from './modules/annotation.module.n
 include format_csq from './modules/annotation.module.nf'
 include format_csq_manual from './modules/annotation.module.nf'
 include extract_lcrs from './modules/annotation.module.nf'
-include convert_gff_to_gtf from './modules/annotation.module.nf'
 
 def log_summary() {
 /*
@@ -145,7 +145,7 @@ workflow {
             .combine(Channel.from("${myFile.getParent()}")) //outdir
             .combine(Channel.fromPath("${params.genome}")) // genome
             .combine(Channel.fromPath("${params.gff}"))// gff 
-            .combine(Channel.fromPath(params.snpeff_config)) | convert_gff_to_gtf | snpeff_db_manual 
+            .combine(Channel.fromPath(params.snpeff_config)) | snpeff_db_manual 
 
         /* CSQ Annotations */
         Channel.from("${myFile.getBaseName()}".replaceFirst(/.genome.fa/, ""))
@@ -153,7 +153,7 @@ workflow {
             .combine(Channel.fromPath("${params.gff}")) | format_csq_manual
 
         /* Extract LCRs and other annotations */
-        //
+        // we don't have this!
     }
 
     
