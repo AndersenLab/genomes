@@ -10,6 +10,9 @@ args <- commandArgs(trailingOnly = TRUE)
 #Read in GFF
 gff <- read.delim(args[1], header=FALSE, stringsAsFactors=FALSE)
 
+# gff = read.delim("QX1410.csq.gff3", header=FALSE, stringsAsFactors=FALSE)
+# gff = read.delim("c_elegans.PRJNA13758.WS276.csq.gff3.gz", header=FALSE, stringsAsFactors=FALSE)
+
 names(gff) <- c("chrm_id", "source", "type", "start", "end", "score", "strand", "phase", "attributes")
 
 #Filter, Parse, Calculate DNA length
@@ -23,26 +26,15 @@ parsedCDS <- CDS %>%
 Reformat <- parsedCDS %>%
   dplyr::group_by(Parent) %>%
   dplyr::summarise(CDNA = sum(length)) %>%
-  dplyr::mutate(AA_Length = ((CDNA/3) - 1)) #Calculating AA length
-
-
-Reformat <- Reformat %>%
-  dplyr::mutate("Transcript" = str_sub(Reformat$Parent, 19)) %>%
-  tidyr::separate(Transcript, into = c("Transcript_1", "Rest"), sep = ",") #If not including transcript isoforms, this can be named TRANSCRIPT and just continue on to making the table.
-
-#Optional steps to include isoforms with alternatively spliced 5' and 3' UTRS
-Reformat <- Reformat %>%
-  dplyr::mutate("Transcript_2" = str_sub(Reformat$Rest, 12)) %>%
-  tidyr::unite("TRANSCRIPT", "Transcript_1", "Transcript_2", sep = ",", na.rm = TRUE)
-
-Reformat <- Reformat %>%
+  dplyr::mutate(AA_Length = ((CDNA/3) - 1)) %>% #Calculating AA length
+  dplyr::mutate(Parent = stringr::str_replace(Parent, ":", "=")) %>% # to allow for elegans and briggsae
+  dplyr::rowwise() %>%
+  dplyr::mutate(TRANSCRIPT = tail(stringr::str_split(Parent, "=")[[1]], n = 1)) %>%
   tidyr::separate_rows(TRANSCRIPT, sep = ",")
-
 
 #Making final table
 AA_Length <- Reformat %>%
   dplyr::select("TRANSCRIPT", "AA_Length")
-
 
 readr::write_tsv(AA_Length, "gff_AA_Length.tsv")
 

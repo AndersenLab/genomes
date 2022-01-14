@@ -11,8 +11,6 @@ nextflow.preview.dsl=2
 //assert System.getenv("NXF_VER") == "20.01.0-rc1"
 assert nextflow.version.matches('20.0+')
 
-log.info "Genome Management"
-
 // Constants
 WORMBASE_PREFIX = "ftp://ftp.wormbase.org/pub/wormbase/releases"
 
@@ -20,12 +18,22 @@ WORMBASE_PREFIX = "ftp://ftp.wormbase.org/pub/wormbase/releases"
     Params
 */
 //params.output="genomes"
-params.wb_version="WS276"
-params.projects="""c_elegans/PRJNA13758,c_briggsae/PRJNA10731,c_tropicalis/PRJNA53597"""
 params.snpeff_config = "${workflow.projectDir}/data/snpeff_config_base.txt"
-project_list = params.projects.split(",")
+params.genome = null // set for manual genome not from wormbase
+params.gff = null // set for manual genome not from wormbase
+params.output = "${workflow.projectDir}/genomes_test"
+// params.output = "/projects/b1059/data/${params.species}/genomes/"
 
-println "Downloading ${params.wb_version} --> ${project_list}"
+if(!params.genome) {
+    params.wb_version="WS276"
+    params.projects="""c_elegans/PRJNA13758,c_briggsae/PRJNA10731,c_tropicalis/PRJNA53597"""
+    project_list = params.projects.split(",")
+} else {
+    params.wb_version=null
+    params.projects=null
+    project_list = null
+}
+
 
 /* Includes */
 // Downloads
@@ -41,9 +49,117 @@ include create_sequence_dictionary from './modules/genome.module.nf'
 
 // Annotation
 include snpeff_db from './modules/annotation.module.nf'
+include snpeff_db_manual from './modules/annotation.module.nf'
 include { decompress as decompress_genome; } from './modules/annotation.module.nf'
 include format_csq from './modules/annotation.module.nf'
+include format_csq_manual from './modules/annotation.module.nf'
 include extract_lcrs from './modules/annotation.module.nf'
+
+def log_summary() {
+/*
+    Generates a log
+*/
+
+out = '''
+>AAGACGACTAGAGGGGGCTATCGACTACGAAACTCGACTAGCTCAGCGGGATCAGCATCACGATGGGGGCCTATCTACGACAAAATCAGCTACGAAA
+AGACCATCTATCATAAAAAATATATATCTCTTTCTAGCGACGATAAACTCTCTTTCATAAATCTCGGGATCTAGCTATCGCTATATATATATATATGC
+GAAATA      CGCG       GA ATATA AAAA    TCG TCGAT GC       GGGC     CGATCGA TAGAT GA      TATATCGC
+TTAAC ACTAGAGGGG CTATCGAC  CGAA CT GACTA CT  GCG  AT AGCATCACG TGGGGGCCTATC  CGAC AA TCAGCTACGAAAT
+AGCCC TCTATCATAA    TATAT T TCT TC AGCGA GA A A T TC    ATAAAT TCGGGATCTAGC A CGC AT    ATATATATGC
+GCGAT TCTAC   AG GCGGGGGA AT TA AA AAGAC CG TC AT GC AGCTGGGGGC    ACG   GA TA AT GA CTATATATATCGC
+AATGC ACTAGAG GG CTATCGAC ACG A CT GACTA CT AGCGG AT AGCATCACGATGGG GCCTATC ACG C AA TCAGCTACGAAAT
+ACTCC TCTATCA AA AAATATAT TCTC  TC AGCGA GA AAACT TC TTCATAAATCTCGG ATCTAGC ATCG  AT TATATATATATGC
+TTAATA       FCG       GA ATATA AAA     TCG TCGAT GC        GG     ACGATCGA TAGAT GA CTATATATATCGC
+AACACGACTAGAGGGGGCTATCGACTACGAAACTCGACTAGCTCAGCGGGATCAGCATCACGATGGGGGCCTATCTACGACAAAATCAGCTACGAAAT
+CTACCATCTATCATAAAAAATATATATCTCTTTCTAGCGACGATAAACTCTCTTTCATAAATCTCGGGATCTAGCTATCGCTATATATATATATATGC
+
+''' + """
+To run the pipeline:
+
+nextflow main.nf --projects c_elegans/PRJNA13758 --wb_version WS276
+
+    parameters              description                                    Set/Default
+    ==========              ===========                                    ========================
+    --wb_version            wormbase version to build                      ${params.wb_version}
+    --projects              comma-delimited list of `species/project_id`   ${params.projects}
+    --genome                Path to manually curated genome                ${params.genome}
+    --output                Path of output folder                          ${params.output}
+
+    username                                                            ${"whoami".execute().in.text}
+
+"""
+out
+}
+
+
+log.info(log_summary())
+
+
+if (params.help) {
+    exit 1
+}
+
+log.info "Genome Management"
+
+
+workflow {
+    // Download genome if wsbuild OR use provided genome and gff to build annotation files
+    if(!params.genome) {
+        println "Downloading ${params.wb_version} --> ${project_list}"
+
+        fetch_projects()
+        genome_set = fetch_projects.out.splitCsv(header: true, sep: "\t")
+                    .filter { project_list.contains("${it.species}/${it.project}") }
+                    .map { row ->
+                        // Create output directory stub
+                        row.name = "${row.species}.${row.project}.${params.wb_version}"
+                        row.genome = "${row.name}.genome";
+                        row.out_dir = "${row.species}/genomes/${row.project}/${params.wb_version}";
+                        row;
+                    }
+
+        // Download genome and index
+        format_dl(genome_set, "genomic.fa.gz") | download_genome | gzip_to_bgzip | (bwa_index & samtools_faidx & create_sequence_dictionary)
+
+        // Download
+        format_dl(genome_set, "canonical_geneset.gtf.gz") | download_gtf
+        format_dl(genome_set, "annotations.gff3.gz") | download_gff3
+
+        /* SnpEff */
+        genome_eff = decompress_genome(download_genome.out).map { row, genome -> [row.name, row, genome] }
+        gtf_eff = download_gtf.out.map { row, gtf -> [row.name, gtf] }
+        genome_eff.join(gtf_eff)
+                .combine(Channel.fromPath(params.snpeff_config)) | snpeff_db
+
+        /* CSQ Annotations */
+        download_gff3.out | format_csq
+
+        /* Extract LCRs and other annotations */
+        download_gff3.out | extract_lcrs
+    } else {
+        myFile = file("${params.genome}")
+        println("Managing genome: ${myFile.getBaseName()}")
+
+        /* SnpEff */
+        Channel.from("${myFile.getBaseName()}".replaceFirst(/.genome.fa/, "")) // name
+            .combine(Channel.from("${myFile.getParent()}")) //outdir
+            .combine(Channel.fromPath("${params.genome}")) // genome
+            .combine(Channel.fromPath("${params.gff}"))// gff 
+            .combine(Channel.fromPath(params.snpeff_config)) | snpeff_db_manual 
+
+        /* CSQ Annotations */
+        Channel.from("${myFile.getBaseName()}".replaceFirst(/.genome.fa/, ""))
+            .combine(Channel.from("${myFile.getParent()}"))
+            .combine(Channel.fromPath("${params.gff}")) | format_csq_manual
+
+        /* Extract LCRs and other annotations */
+        // we don't have this!
+    }
+
+    
+
+
+}
 
 process fetch_projects {
 
@@ -88,35 +204,3 @@ def download(ch, fname) {
     }
 }
 
-workflow {
-    fetch_projects()
-    genome_set = fetch_projects.out.splitCsv(header: true, sep: "\t")
-                      .filter { project_list.contains("${it.species}/${it.project}") }
-                      .map { row ->
-                          // Create output directory stub
-                          row.name = "${row.species}.${row.project}.${params.wb_version}"
-                          row.genome = "${row.name}.genome";
-                          row.out_dir = "${row.species}/genomes/${row.project}/${params.wb_version}";
-                          row;
-                      }
-
-    // Download genome and index
-    format_dl(genome_set, "genomic.fa.gz") | download_genome | gzip_to_bgzip | (bwa_index & samtools_faidx & create_sequence_dictionary)
-
-    // Download
-    format_dl(genome_set, "canonical_geneset.gtf.gz") | download_gtf
-    format_dl(genome_set, "annotations.gff3.gz") | download_gff3
-    
-    /* SnpEff */
-    genome_eff = decompress_genome(download_genome.out).map { row, genome -> [row.name, row, genome] }
-    gtf_eff = download_gtf.out.map { row, gtf -> [row.name, gtf] }
-    genome_eff.join(gtf_eff)
-              .combine(Channel.fromPath(params.snpeff_config)) | snpeff_db
-
-    /* CSQ Annotations */
-    download_gff3.out | format_csq
-
-    /* Extract LCRs and other annotations */
-    download_gff3.out | extract_lcrs
-
-}

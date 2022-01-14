@@ -49,8 +49,11 @@ process snpeff_db {
 
 }
 
-
+// aa length currently doesn't work unless c.e. need to potentially change gff for other species
 process format_csq {
+
+    tag { "${row.name}" }
+
     /*
         Generate a GFF file for CSQ annotation by BCFTools
     */
@@ -65,8 +68,11 @@ process format_csq {
         path("${row.name}.csq.gff3.gz.tbi")
         path("${row.name}.AA_Scores.tsv")
         path("${row.name}.AA_Length.tsv")
+        path("*.gff")
 
     """
+    if [[ ${row.species} = "c_elegans" ]]
+    then
         # Ryan's fix for formatting gff3 for bcsq
         zcat in.gff.gz | grep -P "\tWormBase\t" > simple.wormbase.gff3
 
@@ -76,13 +82,121 @@ process format_csq {
         bgzip ${row.name}.csq.gff3
         tabix -p gff ${row.name}.csq.gff3.gz
 
-        # also run AA_scores and AA_length
-        Rscript --vanilla ${workflow.projectDir}/bin/AA_Scores_Table.R ${workflow.projectDir}/bin/BLOSUM62
-        mv AA_Scores.tsv ${row.name}.AA_Scores.tsv
-
         Rscript --vanilla ${workflow.projectDir}/bin/AA_Length.R ${row.name}.csq.gff3.gz
         mv gff_AA_Length.tsv ${row.name}.AA_Length.tsv
+    else
+        # to prep the gff3 for bcftools csq
+        gzip -dc in.gff.gz | \
+            awk '\$2 ~ "WormBase.*"' | \
+            sed -e 's/ID=Transcript:/ID=transcript:/g' \
+                -e 's/ID=Gene:/ID=gene:/g' \
+                -e 's/Parent=Transcript:/Parent=transcript:/g' \
+                -e 's/Parent=Gene:/Parent=gene:/g' \
+                -e 's/Parent=Pseudogene:/Parent=transcript:/g' > prep.gff
+        
+        format_csq.R
+        {
+            gzip -dc in.gff.gz | grep '^##';
+            bedtools sort -i out.gff3;
+        } > ${row.name}.csq.gff3
+        
+        bgzip ${row.name}.csq.gff3
+        tabix -p gff ${row.name}.csq.gff3.gz
 
+        # AA lengths currently doesn't work for non c.e need to udpate
+        touch ${row.name}.AA_Length.tsv
+    fi
+
+    # also run AA_scores and AA_length
+    Rscript --vanilla ${workflow.projectDir}/bin/AA_Scores_Table.R ${workflow.projectDir}/bin/BLOSUM62
+    mv AA_Scores.tsv ${row.name}.AA_Scores.tsv
+
+    # also get gene file for nemascan
+    cp ${row.name}.csq.gff3.gz test.gff.gz
+    gunzip test.gff.gz
+    Rscript --vanilla ${workflow.projectDir}/bin/gene_file_nemascan.R test.gff ${row.species}
+    rm test.gff
+
+    """
+
+}
+
+// aa length currently doesn't work unless c.e. need to potentially change gff for other species
+process format_csq_manual {
+
+    /*
+        Generate a GFF file for CSQ annotation by BCFTools
+    */
+
+    publishDir "${out_dir}/csq", mode: 'copy'
+    // publishDir "${params.output}/csq", mode: 'copy' // use for debug test
+
+    input:
+        tuple val("name"), val("out_dir"), path("gff_file")
+
+    output:
+        // path("${name}.csq.gff3.gz")
+        // path("${name}.csq.gff3.gz.tbi")
+        path("${name}.csq.gff3")
+        // path("${name}.csq.gff3.tbi")
+        path("${name}.AA_Scores.tsv")
+        path("${name}.AA_Length.tsv")
+        path("*.gff")
+
+    """
+    cp ${gff_file} ${name}.csq.gff3
+    # tabix -p gff ${name}.csq.gff3
+
+    Rscript --vanilla ${workflow.projectDir}/bin/AA_Length.R ${name}.csq.gff3
+    mv gff_AA_Length.tsv ${name}.AA_Length.tsv
+    
+    # also run AA_scores and AA_length
+    Rscript --vanilla ${workflow.projectDir}/bin/AA_Scores_Table.R ${workflow.projectDir}/bin/BLOSUM62
+    mv AA_Scores.tsv ${name}.AA_Scores.tsv
+
+    # also get gene file for nemascan
+    sp=`echo ${name} | cut -d '.' -f 1`
+    Rscript --vanilla ${workflow.projectDir}/bin/gene_file_nemascan.R ${name}.csq.gff3 \$sp
+
+    """
+
+}
+
+
+// use gff instead of gtf to create snpeff config manually
+process snpeff_db_manual {
+
+    publishDir "${out_dir}/snpeff", mode: 'copy'
+    // publishDir "${params.output}/snpeff", mode: 'copy' // use for debug test
+
+    input:
+        tuple val(name), val("out_dir"), \
+              // path("${name}/sequences.fa.gz"), \
+              // path("${name}/genes.gff.gz"), \
+              path("${name}/sequences.fa"), \
+              path("${name}/genes.gff"), \
+              path("snpeff_config_base.txt")
+
+    output:
+        path("snpEff.config")
+        path("${name}/snpEffectPredictor.bin")
+        path("${name}/genes.gff")
+        path("${name}/sequences.fa")
+
+    """
+    sp=`echo ${name} | cut -d '.' -f 1`
+        {
+            cat snpeff_config_base.txt;
+            echo "${name}.genome : \$sp";
+            has_mtdna=\$(grep 'MtDNA' ${name}/sequences.fa | wc -l)
+            if (( \${has_mtdna} > 0 )); then
+                echo "${name}.MtDNA.codonTable : Invertebrate_Mitochondrial"
+            fi;
+        } > snpEff.config
+        snpEff build -c snpEff.config \
+                     -dataDir . \
+                     -gff3 \
+                     -v ${name}
     """
 
 }
@@ -117,3 +231,4 @@ process extract_lcrs {
         tabix -f -p bed !{row.name}.repeat_masker.bed.gz
     '''
 }
+
