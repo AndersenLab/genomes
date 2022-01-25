@@ -138,9 +138,7 @@ workflow {
         download_gff3.out | extract_lcrs
 
         // get gene and transcript tracks for cendr (elegans only right now)
-        if(${row.species} == "c_elegans") {
-            download_gff3.out | cendr_browser_tracks
-        }
+        download_gff3.out | cendr_browser_tracks
     } else {
         myFile = file("${params.genome}")
         println("Managing genome: ${myFile.getBaseName()}")
@@ -213,15 +211,18 @@ def download(ch, fname) {
 // looks like this file isonly currently supported for elegans and maybe briggsae but not tropicalis.
 process cendr_browser_tracks {
 
-    publishDir "${params.output}/", mode: 'copy'
+    publishDir "${params.output}/browser_tracks/", mode: 'copy'
 
     input:
-        tuple val(row), path("gff.gz")
+        tuple val(row), path("gff")
 
     output:
-        tuple path("*.bed.gz"), path("*.bed.gz.tbi")
+        tuple path("*.bed.gz"), path("*.bed.gz.tbi"), optional: true
 
     """
+    if [[ ${row.species} == 'c_elegans' ]];
+    then
+
     function zip_index {
         bgzip -f ${1}
         tabix ${1}.gz
@@ -231,7 +232,9 @@ process cendr_browser_tracks {
     # Confusingly, this track is derived from 
     # one called elegans_genes on wormbase.
     # Add parenthetical gene name for transcripts.
-    curl ftp://ftp.wormbase.org/pub/wormbase/releases/current-production-release/MULTI_SPECIES/hub/elegans/elegans_genes_${params.wb_version} > gene_file.bb
+    # curl ftp://ftp.wormbase.org/pub/wormbase/releases/current-production-release/MULTI_SPECIES/hub/elegans/elegans_genes_${params.wb_version}.bb > gene_file.bb
+    # wget -v -O gene_file.bb ${WORMBASE_PREFIX}/${params.wb_version}/MULTI_SPECIES/hub/elegans/elegans_genes_${params.wb_version}.bb
+    wget -O gene_file.bb https://downloads.wormbase.org/releases/WS283/MULTI_SPECIES/hub/elegans/elegans_genes_WS283.bb
     BigBedToBed gene_file.bb tmp.bed
     sortBed -i tmp.bed > elegans_transcripts_${params.wb_version}.bed
     bgzip -f elegans_transcripts_${params.wb_version}.bed.gz
@@ -242,16 +245,18 @@ process cendr_browser_tracks {
     tmp_gff=\$(mktemp)
     tmp_gff2=\$(mktemp)
     tmp_bed3=\$(mktemp)
-    gzip -dc ${gff.gz} | \
+    gzip -dc ${gff} | \
     grep 'locus' | \
-    awk '\$2 == "WormBase" && \$3 == "gene"' > "${tmp_gff}"
-    sortBed -i "${tmp_gff}" > "${tmp_gff2}"
+    awk '\$2 == "WormBase" && \$3 == "gene"' > "\${tmp_gff}"
+    sortBed -i "\${tmp_gff}" > "\${tmp_gff2}"
 
     # Install with conda install gawk
-    convert2bed -i gff < "${tmp_gff2}" > ${tmp_bed3}
-    gawk -v OFS='\t' '{ match(\$0, "locus=([^;\t]+)", f); \$4=f[1]; print \$1, \$2, \$3, \$4, 100, \$6  }' "${tmp_bed3}" | \
+    convert2bed -i gff < "\${tmp_gff2}" > \${tmp_bed3}
+    gawk -v OFS='\\t' '{ match(\$0, "locus=([^;\\t]+)", f); \$4=f[1]; print \$1, \$2, \$3, \$4, 100, \$6  }' "\${tmp_bed3}" | \
     uniq > elegans_gene.${params.wb_version}.bed
     zip_index elegans_gene.${params.wb_version}.bed
+
+    fi
 
     """
 
