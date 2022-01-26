@@ -136,20 +136,40 @@ workflow {
 
         /* Extract LCRs and other annotations */
         download_gff3.out | extract_lcrs
+
+        // get gene and transcript tracks for cendr (elegans only right now)
+        // download_gff3.out | cendr_browser_tracks
     } else {
+
+        // I apologize for how messy this part is... 
+
         myFile = file("${params.genome}")
         println("Managing genome: ${myFile.getBaseName()}")
 
+        // Setup genome files
+        manual_setup()
+
+        genome_set = manual_setup.out.splitCsv(header: true, sep: "\t")
+            .map { row ->
+                // Create output directory stub
+                row.name = "${row.species}.${row.project}.${params.wb_version}"
+                row.genome = "${row.name}.genome";
+                row.out_dir = "${row.species}/genomes/${row.project}/${params.wb_version}";
+                row;
+            }
+
+        // Index genome
+        genome_set.map {row -> row}.combine(Channel.fromPath("${params.genome}")) | gzip_to_bgzip | (bwa_index & samtools_faidx & create_sequence_dictionary)
+
         /* SnpEff */
-        Channel.from("${myFile.getBaseName()}".replaceFirst(/.genome.fa/, "")) // name
-            .combine(Channel.from("${myFile.getParent()}")) //outdir
-            .combine(Channel.fromPath("${params.genome}")) // genome
+        decompress_genome(genome_set.map { row -> row }
+            .combine(Channel.fromPath("${params.genome}")))
+            .map { row, genome -> [row.name, row, genome] }
             .combine(Channel.fromPath("${params.gff}"))// gff 
             .combine(Channel.fromPath(params.snpeff_config)) | snpeff_db_manual 
 
         /* CSQ Annotations */
-        Channel.from("${myFile.getBaseName()}".replaceFirst(/.genome.fa/, ""))
-            .combine(Channel.from("${myFile.getParent()}"))
+        genome_set.map { row -> row }
             .combine(Channel.fromPath("${params.gff}")) | format_csq_manual
 
         /* Extract LCRs and other annotations */
@@ -203,4 +223,75 @@ def download(ch, fname) {
          format_url(row, fname)]
     }
 }
+
+process manual_setup {
+
+
+    output:
+        file("setup_file.txt")
+
+    """
+    echo -e "species\tproject" > setup_file.txt
+    echo "${params.species}\t${params.projects}" >> setup_file.txt
+    """
+}
+
+
+
+// download big bed file for gene and transcript tracks for CeNDR
+// looks like this file isonly currently supported for elegans and maybe briggsae but not tropicalis.
+process cendr_browser_tracks {
+
+    publishDir "${params.output}/browser_tracks/", mode: 'copy'
+
+    input:
+        tuple val(row), path("gff")
+
+    output:
+        tuple path("*.bed.gz"), path("*.bed.gz.tbi"), optional: true
+
+    """
+    if [[ ${row.species} == 'c_elegans' ]];
+    then
+
+    function zip_index {
+        bgzip -f ${1}
+        tabix ${1}.gz
+    }
+
+    # Generate the transcripts track;
+    # Confusingly, this track is derived from 
+    # one called elegans_genes on wormbase.
+    # Add parenthetical gene name for transcripts.
+    # curl ftp://ftp.wormbase.org/pub/wormbase/releases/current-production-release/MULTI_SPECIES/hub/elegans/elegans_genes_${params.wb_version}.bb > gene_file.bb
+    # wget -v -O gene_file.bb ${WORMBASE_PREFIX}/${params.wb_version}/MULTI_SPECIES/hub/elegans/elegans_genes_${params.wb_version}.bb
+    wget -O gene_file.bb https://downloads.wormbase.org/releases/WS283/MULTI_SPECIES/hub/elegans/elegans_genes_WS283.bb
+    BigBedToBed gene_file.bb tmp.bed
+    sortBed -i tmp.bed > elegans_transcripts_${params.wb_version}.bed
+    bgzip -f elegans_transcripts_${params.wb_version}.bed.gz
+    tabix elegans_transcripts_${params.wb_version}.bed.gz
+    rm tmp.bed
+
+    # Generate Gene Track BED File
+    tmp_gff=\$(mktemp)
+    tmp_gff2=\$(mktemp)
+    tmp_bed3=\$(mktemp)
+    gzip -dc ${gff} | \
+    grep 'locus' | \
+    awk '\$2 == "WormBase" && \$3 == "gene"' > "\${tmp_gff}"
+    sortBed -i "\${tmp_gff}" > "\${tmp_gff2}"
+
+    # Install with conda install gawk
+    convert2bed -i gff < "\${tmp_gff2}" > \${tmp_bed3}
+    gawk -v OFS='\\t' '{ match(\$0, "locus=([^;\\t]+)", f); \$4=f[1]; print \$1, \$2, \$3, \$4, 100, \$6  }' "\${tmp_bed3}" | \
+    uniq > elegans_gene.${params.wb_version}.bed
+    zip_index elegans_gene.${params.wb_version}.bed
+
+    fi
+
+    """
+
+}
+
+
 

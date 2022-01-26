@@ -10,7 +10,7 @@ library(readr)
 args <- commandArgs(trailingOnly = TRUE)
 
 # load gff
-gff <- data.table::fread(args[1])
+gff <- read.delim(args[1], header=FALSE, stringsAsFactors=FALSE)
 
 # change column names
 colnames(gff) <- c('CHROM', "source", "type", "start", "stop", "v6", "v7", "v8", "info")
