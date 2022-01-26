@@ -138,7 +138,7 @@ workflow {
         download_gff3.out | extract_lcrs
 
         // get gene and transcript tracks for cendr (elegans only right now)
-        // download_gff3.out | cendr_browser_tracks
+        download_gff3.out | cendr_browser_tracks
     } else {
 
         // I apologize for how messy this part is... 
@@ -242,7 +242,9 @@ process manual_setup {
 // looks like this file isonly currently supported for elegans and maybe briggsae but not tropicalis.
 process cendr_browser_tracks {
 
-    publishDir "${params.output}/browser_tracks/", mode: 'copy'
+    executor 'local'
+
+    publishDir "${params.output}/${row.out_dir}/browser_tracks/", mode: 'copy'
 
     input:
         tuple val(row), path("gff")
@@ -255,35 +257,30 @@ process cendr_browser_tracks {
     then
 
     function zip_index {
-        bgzip -f ${1}
-        tabix ${1}.gz
+        bgzip -f \${1}
+        tabix \${1}.gz
     }
 
-    # Generate the transcripts track;
-    # Confusingly, this track is derived from 
-    # one called elegans_genes on wormbase.
+    # Generate the transcripts track; Confusingly, this track is derived from one called elegans_genes on wormbase.
     # Add parenthetical gene name for transcripts.
+
     # curl ftp://ftp.wormbase.org/pub/wormbase/releases/current-production-release/MULTI_SPECIES/hub/elegans/elegans_genes_${params.wb_version}.bb > gene_file.bb
-    # wget -v -O gene_file.bb ${WORMBASE_PREFIX}/${params.wb_version}/MULTI_SPECIES/hub/elegans/elegans_genes_${params.wb_version}.bb
-    wget -O gene_file.bb https://downloads.wormbase.org/releases/WS283/MULTI_SPECIES/hub/elegans/elegans_genes_WS283.bb
-    BigBedToBed gene_file.bb tmp.bed
+    wget -O gene_file.bb ${WORMBASE_PREFIX}/${params.wb_version}/MULTI_SPECIES/hub/elegans/elegans_genes_${params.wb_version}.bb
+    bigBedToBed gene_file.bb tmp.bed
     sortBed -i tmp.bed > elegans_transcripts_${params.wb_version}.bed
-    bgzip -f elegans_transcripts_${params.wb_version}.bed.gz
+    bgzip -f elegans_transcripts_${params.wb_version}.bed
     tabix elegans_transcripts_${params.wb_version}.bed.gz
     rm tmp.bed
 
-    # Generate Gene Track BED File
-    tmp_gff=\$(mktemp)
-    tmp_gff2=\$(mktemp)
-    tmp_bed3=\$(mktemp)
+    # Generate Gene Track BED File 
     gzip -dc ${gff} | \
     grep 'locus' | \
-    awk '\$2 == "WormBase" && \$3 == "gene"' > "\${tmp_gff}"
-    sortBed -i "\${tmp_gff}" > "\${tmp_gff2}"
+    awk '\$2 == "WormBase" && \$3 == "gene"' > temp.gff
+    sortBed -i temp.gff > sorted.gff
 
     # Install with conda install gawk
-    convert2bed -i gff < "\${tmp_gff2}" > \${tmp_bed3}
-    gawk -v OFS='\\t' '{ match(\$0, "locus=([^;\\t]+)", f); \$4=f[1]; print \$1, \$2, \$3, \$4, 100, \$6  }' "\${tmp_bed3}" | \
+    convert2bed --sort-tmpdir . -i gff < sorted.gff > final.bed
+    gawk -v OFS='\\t' '{ match(\$0, "locus=([^;\\t]+)", f); \$4=f[1]; print \$1, \$2, \$3, \$4, 100, \$6  }' final.bed | \
     uniq > elegans_gene.${params.wb_version}.bed
     zip_index elegans_gene.${params.wb_version}.bed
 
