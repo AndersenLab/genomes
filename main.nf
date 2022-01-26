@@ -138,21 +138,38 @@ workflow {
         download_gff3.out | extract_lcrs
 
         // get gene and transcript tracks for cendr (elegans only right now)
-        download_gff3.out | cendr_browser_tracks
+        // download_gff3.out | cendr_browser_tracks
     } else {
+
+        // I apologize for how messy this part is... 
+
         myFile = file("${params.genome}")
         println("Managing genome: ${myFile.getBaseName()}")
 
+        // Setup genome files
+        manual_setup()
+
+        genome_set = manual_setup.out.splitCsv(header: true, sep: "\t")
+            .map { row ->
+                // Create output directory stub
+                row.name = "${row.species}.${row.project}.${params.wb_version}"
+                row.genome = "${row.name}.genome";
+                row.out_dir = "${row.species}/genomes/${row.project}/${params.wb_version}";
+                row;
+            }
+
+        // Index genome
+        genome_set.map {row -> row}.combine(Channel.fromPath("${params.genome}")) | gzip_to_bgzip | (bwa_index & samtools_faidx & create_sequence_dictionary)
+
         /* SnpEff */
-        Channel.from("${myFile.getBaseName()}".replaceFirst(/.genome.fa/, "")) // name
-            .combine(Channel.from("${myFile.getParent()}")) //outdir
-            .combine(Channel.fromPath("${params.genome}")) // genome
+        decompress_genome(genome_set.map { row -> row }
+            .combine(Channel.fromPath("${params.genome}")))
+            .map { row, genome -> [row.name, row, genome] }
             .combine(Channel.fromPath("${params.gff}"))// gff 
             .combine(Channel.fromPath(params.snpeff_config)) | snpeff_db_manual 
 
         /* CSQ Annotations */
-        Channel.from("${myFile.getBaseName()}".replaceFirst(/.genome.fa/, ""))
-            .combine(Channel.from("${myFile.getParent()}"))
+        genome_set.map { row -> row }
             .combine(Channel.fromPath("${params.gff}")) | format_csq_manual
 
         /* Extract LCRs and other annotations */
@@ -206,6 +223,20 @@ def download(ch, fname) {
          format_url(row, fname)]
     }
 }
+
+process manual_setup {
+
+
+    output:
+        file("setup_file.txt")
+
+    """
+    echo -e "species\tproject" > setup_file.txt
+    echo "${params.species}\t${params.projects}" >> setup_file.txt
+    """
+}
+
+
 
 // download big bed file for gene and transcript tracks for CeNDR
 // looks like this file isonly currently supported for elegans and maybe briggsae but not tropicalis.
