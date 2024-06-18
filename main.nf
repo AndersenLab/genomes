@@ -5,14 +5,37 @@ Andersen Lab Genome preparation pipeline
 This pipeline is designed to download genomic datasets
 and from wormbase and process them for downstream analysis.
 
-Author: Daniel E. Cook
+Authors:
+    Daniel E. Cook
+    Mike Sauria
 */
-nextflow.preview.dsl=2
-//assert System.getenv("NXF_VER") == "20.01.0-rc1"
-assert nextflow.version.matches('20.0+')
+
+nextflow.enable.dsl=2
+//assert System.getenv("NXF_VER") >= "23.0"
+assert nextflow.version.matches('23.0+')
+
+/* Includes */
+// Downloads
+include { download_url as download_genome;
+          download_url as download_gtf;
+          download_url as download_gff3; } from './modules/download.module.nf'
+
+// Genome
+include { gzip_to_bgzip } from './modules/genome.module.nf'
+include { bwa_index } from './modules/genome.module.nf'
+include { samtools_faidx } from './modules/genome.module.nf'
+include { create_sequence_dictionary } from './modules/genome.module.nf'
+
+// Annotation
+include { snpeff_db } from './modules/annotation.module.nf'
+include { snpeff_db_manual } from './modules/annotation.module.nf'
+include { decompress as decompress_genome; } from './modules/annotation.module.nf'
+include { format_csq } from './modules/annotation.module.nf'
+include { format_csq_manual } from './modules/annotation.module.nf'
+include { extract_lcrs } from './modules/annotation.module.nf'
 
 // Constants
-WORMBASE_PREFIX = "ftp://ftp.wormbase.org/pub/wormbase/releases"
+WORMBASE_PREFIX = "ftp://ftp.wormbase.org/pub/wormbase"
 
 /*
     Params
@@ -21,8 +44,10 @@ WORMBASE_PREFIX = "ftp://ftp.wormbase.org/pub/wormbase/releases"
 params.snpeff_config = "${workflow.projectDir}/data/snpeff_config_base.txt"
 params.genome = null // set for manual genome not from wormbase
 params.gff = null // set for manual genome not from wormbase
-// params.output = "${workflow.projectDir}/genomes_test"
-params.output = "/projects/b1059/data/"
+
+if(!params.output) {
+    params.output = "${workflow.launchDir}/genomes_test"
+}
 
 if(!params.genome) {
     params.wb_version="WS276"
@@ -35,32 +60,21 @@ if(!params.genome) {
 }
 
 
-/* Includes */
-// Downloads
-include { download_url as download_genome;
-          download_url as download_gtf;
-          download_url as download_gff3; } from './modules/download.module.nf'
-
-// Genome
-include gzip_to_bgzip from './modules/genome.module.nf'
-include bwa_index from './modules/genome.module.nf'
-include samtools_faidx from './modules/genome.module.nf'
-include create_sequence_dictionary from './modules/genome.module.nf'
-
-// Annotation
-include snpeff_db from './modules/annotation.module.nf'
-include snpeff_db_manual from './modules/annotation.module.nf'
-include { decompress as decompress_genome; } from './modules/annotation.module.nf'
-include format_csq from './modules/annotation.module.nf'
-include format_csq_manual from './modules/annotation.module.nf'
-include extract_lcrs from './modules/annotation.module.nf'
-
 def log_summary() {
 /*
     Generates a log
 */
 
-out = '''
+out = 
+out
+}
+
+
+log.info(log_summary())
+
+
+if (params.help) {
+    log.info('''
 >AAGACGACTAGAGGGGGCTATCGACTACGAAACTCGACTAGCTCAGCGGGATCAGCATCACGATGGGGGCCTATCTACGACAAAATCAGCTACGAAA
 AGACCATCTATCATAAAAAATATATATCTCTTTCTAGCGACGATAAACTCTCTTTCATAAATCTCGGGATCTAGCTATCGCTATATATATATATATGC
 GAAATA      CGCG       GA ATATA AAAA    TCG TCGAT GC       GGGC     CGATCGA TAGAT GA      TATATCGC
@@ -87,15 +101,20 @@ nextflow main.nf --projects c_elegans/PRJNA13758 --wb_version WS276
 
     username                                                            ${"whoami".execute().in.text}
 
-"""
-out
+""")
+    exit 1
+} else {
+    log.info('''
+G E N O M E S - N F   P I P E L I N E
+========================================
+wb_version =            ${params.wb_version}
+projects   =            ${params.projects}
+genome     =            ${params.genome}
+output     =            ${params.output}
+    ''')
 }
 
-
-log.info(log_summary())
-
-
-if (params.help) {
+if (params.debug){
     exit 1
 }
 
@@ -118,62 +137,62 @@ workflow {
                         row;
                     }
 
-        // Download genome and index
-        format_dl(genome_set, "genomic.fa.gz") | download_genome | gzip_to_bgzip | (bwa_index & samtools_faidx & create_sequence_dictionary)
+    //     // Download genome and index
+    //     format_dl(genome_set, "genomic.fa.gz") | download_genome | gzip_to_bgzip | (bwa_index & samtools_faidx & create_sequence_dictionary)
 
-        // Download
-        format_dl(genome_set, "canonical_geneset.gtf.gz") | download_gtf
-        format_dl(genome_set, "annotations.gff3.gz") | download_gff3
+    //     // Download
+    //     format_dl(genome_set, "canonical_geneset.gtf.gz") | download_gtf
+    //     format_dl(genome_set, "annotations.gff3.gz") | download_gff3
 
-        /* SnpEff */
-        genome_eff = decompress_genome(download_genome.out).map { row, genome -> [row.name, row, genome] }
-        gtf_eff = download_gtf.out.map { row, gtf -> [row.name, gtf] }
-        genome_eff.join(gtf_eff)
-                .combine(Channel.fromPath(params.snpeff_config)) | snpeff_db
+    //     /* SnpEff */
+    //     genome_eff = decompress_genome(download_genome.out).map { row, genome -> [row.name, row, genome] }
+    //     gtf_eff = download_gtf.out.map { row, gtf -> [row.name, gtf] }
+    //     genome_eff.join(gtf_eff)
+    //             .combine(Channel.fromPath(params.snpeff_config)) | snpeff_db
 
-        /* CSQ Annotations */
-        download_gff3.out | format_csq
+    //     /* CSQ Annotations */
+    //     download_gff3.out | format_csq
 
-        /* Extract LCRs and other annotations */
-        download_gff3.out | extract_lcrs
+    //     /* Extract LCRs and other annotations */
+    //     download_gff3.out | extract_lcrs
 
-        // get gene and transcript tracks for cendr (elegans only right now)
-        download_gff3.out | cendr_browser_tracks
-    } else {
+    //     // get gene and transcript tracks for cendr (elegans only right now)
+    //     download_gff3.out | cendr_browser_tracks
+    // } else {
 
-        // I apologize for how messy this part is... 
+    //     // I apologize for how messy this part is... 
 
-        myFile = file("${params.genome}")
-        println("Managing genome: ${myFile.getBaseName()}")
+    //     myFile = file("${params.genome}")
+    //     println("Managing genome: ${myFile.getBaseName()}")
 
-        // Setup genome files
-        manual_setup()
+    //     // Setup genome files
+    //     manual_setup()
 
-        genome_set = manual_setup.out.splitCsv(header: true, sep: "\t")
-            .map { row ->
-                // Create output directory stub
-                row.name = "${row.species}.${row.project}.${params.wb_version}"
-                row.genome = "${row.name}.genome";
-                row.out_dir = "${row.species}/genomes/${row.project}/${params.wb_version}";
-                row;
-            }
+    //     genome_set = manual_setup.out.splitCsv(header: true, sep: "\t")
+    //         .map { row ->
+    //             // Create output directory stub
+    //             row.name = "${row.species}.${row.project}.${params.wb_version}"
+    //             row.genome = "${row.name}.genome";
+    //             row.out_dir = "${row.species}/genomes/${row.project}/${params.wb_version}";
+    //             row;
+    //         }
 
-        // Index genome
-        genome_set.map {row -> row}.combine(Channel.fromPath("${params.genome}")) | gzip_to_bgzip | (bwa_index & samtools_faidx & create_sequence_dictionary)
+    //     // Index genome
+    //     genome_set.map {row -> row}.combine(Channel.fromPath("${params.genome}")) | gzip_to_bgzip | (bwa_index & samtools_faidx & create_sequence_dictionary)
 
-        /* SnpEff */
-        decompress_genome(genome_set.map { row -> row }
-            .combine(Channel.fromPath("${params.genome}")))
-            .map { row, genome -> [row.name, row, genome] }
-            .combine(Channel.fromPath("${params.gff}"))// gff 
-            .combine(Channel.fromPath(params.snpeff_config)) | snpeff_db_manual 
+    //     /* SnpEff */
+    //     decompress_genome(genome_set.map { row -> row }
+    //         .combine(Channel.fromPath("${params.genome}")))
+    //         .map { row, genome -> [row.name, row, genome] }
+    //         .combine(Channel.fromPath("${params.gff}"))// gff 
+    //         .combine(Channel.fromPath(params.snpeff_config)) | snpeff_db_manual 
 
-        /* CSQ Annotations */
-        genome_set.map { row -> row }
-            .combine(Channel.fromPath("${params.gff}")) | format_csq_manual
+    //     /* CSQ Annotations */
+    //     genome_set.map { row -> row }
+    //         .combine(Channel.fromPath("${params.gff}")) | format_csq_manual
 
-        /* Extract LCRs and other annotations */
-        // we don't have this!
+    //     /* Extract LCRs and other annotations */
+    //     // we don't have this!
     }
 
     
@@ -193,15 +212,14 @@ process fetch_projects {
     shell:
     '''
     set -e
-    wormbase_url="ftp://ftp.wormbase.org/pub/wormbase"
-    species=$(curl ${wormbase_url}/species/ | awk '{ print $9 }' | grep -v "README")
+    species=$(curl ${WORMBASE_PREFIX}/species/ | awk '{ print $9 }' | grep -v "README")
 
     function fetch_projects {
         species=${1}
-        curl "${wormbase_url}/species/${species}/" | \
+        curl "${WORMBASE_PREFIX}/species/${species}/" | \
             awk -v OFS="\t" -v species=${species} '$9 ~ "^PR" { print species, $9 }'
     }
-    export wormbase_url
+    export ${WORMBASE_PREFIX}
     export -f fetch_projects
     {
         echo -e "species\tproject";
@@ -213,7 +231,7 @@ process fetch_projects {
 def format_dl(ch, fname) {
     ch.map { row ->
     [row,
-     "${WORMBASE_PREFIX}/${params.wb_version}/species/${row.species}/${row.project}/${row.species}.${row.project}.${params.wb_version}.${fname}"]
+     "${WORMBASE_PREFIX}/releases/${params.wb_version}/species/${row.species}/${row.project}/${row.species}.${row.project}.${params.wb_version}.${fname}"]
     }
 }
 
@@ -265,7 +283,7 @@ process cendr_browser_tracks {
     # Add parenthetical gene name for transcripts.
 
     # curl ftp://ftp.wormbase.org/pub/wormbase/releases/current-production-release/MULTI_SPECIES/hub/elegans/elegans_genes_${params.wb_version}.bb > gene_file.bb
-    wget -O gene_file.bb ${WORMBASE_PREFIX}/${params.wb_version}/MULTI_SPECIES/hub/elegans/elegans_genes_${params.wb_version}.bb
+    wget -O gene_file.bb ${WORMBASE_PREFIX}/releases/${params.wb_version}/MULTI_SPECIES/hub/elegans/elegans_genes_${params.wb_version}.bb
     bigBedToBed gene_file.bb tmp.bed
     sortBed -i tmp.bed > elegans_transcripts_${params.wb_version}.bed
     bgzip -f elegans_transcripts_${params.wb_version}.bed
