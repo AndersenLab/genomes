@@ -1,23 +1,10 @@
 
-
-process decompress {
-
-    input:
-        tuple val(row), path("file.gz")
-    
-    output:
-        tuple val(row), path("file_decompressed")
-
-    """
-        gzip -dc file.gz > file_decompressed
-    """
-}
-
 process snpeff_db {
 
+    label = "sm"
     tag { "${row.name}" }
 
-    publishDir "${params.output}/${row.out_dir}/snpeff", mode: 'copy'
+    publishDir "${row.out_dir}/snpeff", mode: 'copy'
 
     input:
         tuple val(name), \
@@ -33,32 +20,32 @@ process snpeff_db {
         path("${name}/sequences.fa")
 
     """
-        {
-            cat snpeff_config_base.txt;
-            echo "${name}.genome : ${row.species}";
-            has_mtdna=\$(grep 'MtDNA' ${name}/sequences.fa | wc -l)
-            if (( \${has_mtdna} > 0 )); then
-                echo "${name}.MtDNA.codonTable : Invertebrate_Mitochondrial"
-            fi;
-        } > snpEff.config
-        snpEff build -c snpEff.config \
-                     -dataDir . \
-                     -gtf22 \
-                     -v ${name}
+    {
+        cat snpeff_config_base.txt;
+        echo "${name}.genome : ${row.species}";
+        has_mtdna=`grep 'MtDNA' ${name}/sequences.fa | wc -l`
+        if (( \${has_mtdna} > 0 )); then
+            echo "${name}.MtDNA.codonTable : Invertebrate_Mitochondrial"
+        fi;
+    } > snpEff.config
+    snpEff build -c snpEff.config \
+                    -dataDir . \
+                    -gtf22 \
+                    -v ${name}
     """
-
 }
 
 // aa length currently doesn't work unless c.e. need to potentially change gff for other species
 process format_csq {
 
+    label = "sm"
     tag { "${row.name}" }
 
     /*
         Generate a GFF file for CSQ annotation by BCFTools
     */
 
-    publishDir "${params.output}/${row.out_dir}/csq", mode: 'copy'
+    publishDir "${row.out_dir}/csq", mode: 'copy'
 
     input:
         tuple val(row), path("in.gff.gz")
@@ -74,7 +61,7 @@ process format_csq {
     if [[ ${row.species} = "c_elegans" ]]
     then
         # Ryan's fix for formatting gff3 for bcsq
-        zcat in.gff.gz | grep -P "\tWormBase\t" > simple.wormbase.gff3
+        zcat in.gff.gz | grep -P "\\tWormBase\\t" > simple.wormbase.gff3
 
         Rscript --vanilla ${workflow.projectDir}/bin/bcsq_gff_format.R
 
@@ -112,9 +99,7 @@ process format_csq {
 
     # also get gene file for nemascan
     Rscript --vanilla ${workflow.projectDir}/bin/gene_file_nemascan.R ${row.name}.csq.gff3.gz ${row.species}
-
     """
-
 }
 
 // aa length currently doesn't work unless c.e. need to potentially change gff for other species
@@ -124,8 +109,9 @@ process format_csq_manual {
         Generate a GFF file for CSQ annotation by BCFTools
     */
 
-    publishDir "${params.output}/${row.out_dir}/csq", mode: 'copy'
-    // publishDir "${params.output}/csq", mode: 'copy' // use for debug test
+    label = "sm"
+    publishDir "${params.outputDir}/${row.out_dir}/csq", mode: 'copy'
+    // publishDir "${params.outputDir}/csq", mode: 'copy' // use for debug test
 
     input:
         tuple val("row"), path("gff_file")
@@ -153,7 +139,6 @@ process format_csq_manual {
 
     # also get gene file for nemascan
     Rscript --vanilla ${workflow.projectDir}/bin/gene_file_nemascan.R ${row.name}.csq.gff3.gz ${row.species}
-
     """
 
 }
@@ -162,8 +147,9 @@ process format_csq_manual {
 // use gff instead of gtf to create snpeff config manually
 process snpeff_db_manual {
 
-    publishDir "${params.output}/${row.out_dir}/snpeff", mode: 'copy'
-    // publishDir "${params.output}/snpeff", mode: 'copy' // use for debug test
+    label = "sm"
+    publishDir "${params.outputDir}/${row.out_dir}/snpeff", mode: 'copy'
+    // publishDir "${params.outputDir}/snpeff", mode: 'copy' // use for debug test
 
     input:
         tuple val(name), val(row), \
@@ -180,18 +166,18 @@ process snpeff_db_manual {
     """
     sp=`echo ${name} | cut -d '.' -f 1`
 
-        {
-            cat snpeff_config_base.txt;
-            echo "${name}.genome : ${row.species}";
-            has_mtdna=\$(grep 'MtDNA' ${name}/sequences.fa | wc -l)
-            if (( \${has_mtdna} > 0 )); then
-                echo "${name}.MtDNA.codonTable : Invertebrate_Mitochondrial"
-            fi;
-        } > snpEff.config
-        snpEff build -c snpEff.config \
-                     -dataDir . \
-                     -gff3 \
-                     -v ${name}
+    {
+        cat snpeff_config_base.txt;
+        echo "${name}.genome : ${row.species}";
+        has_mtdna=\$(grep 'MtDNA' ${name}/sequences.fa | wc -l)
+        if (( \${has_mtdna} > 0 )); then
+            echo "${name}.MtDNA.codonTable : Invertebrate_Mitochondrial"
+        fi;
+    } > snpEff.config
+    snpEff build -c snpEff.config \
+                    -dataDir . \
+                    -gff3 \
+                    -v ${name}
     """
 
 }
@@ -204,7 +190,8 @@ process extract_lcrs {
         RepeatMasker
     */
 
-    publishDir "${params.output}/${row.out_dir}/lcr", mode: 'copy'
+    label = "sm"
+    publishDir "${row.out_dir}/lcr", mode: 'copy'
 
     input:
         tuple val(row), path("in.gff.gz")
@@ -217,13 +204,13 @@ process extract_lcrs {
 
     shell:
     '''
-        gzip -dc in.gff.gz | \
-        awk -v OFS="\t" '$2 == "dust" { print $1, $4, $5, $2 > "!{row.name}.dust.bed" } 
-                         $2 == "RepeatMasker" {  print $1, $4, $5, $2 > "!{row.name}.repeat_masker.bed" }'
-        bgzip !{row.name}.dust.bed
-        bgzip !{row.name}.repeat_masker.bed
-        tabix -f -p bed !{row.name}.dust.bed.gz
-        tabix -f -p bed !{row.name}.repeat_masker.bed.gz
+    gzip -dc in.gff.gz | \
+    awk -v OFS="\t" '$2 == "dust" { print $1, $4, $5, $2 > "!{row.name}.dust.bed" } 
+                        $2 == "RepeatMasker" {  print $1, $4, $5, $2 > "!{row.name}.repeat_masker.bed" }'
+    bgzip !{row.name}.dust.bed
+    bgzip !{row.name}.repeat_masker.bed
+    tabix -f -p bed !{row.name}.dust.bed.gz
+    tabix -f -p bed !{row.name}.repeat_masker.bed.gz
     '''
 }
 

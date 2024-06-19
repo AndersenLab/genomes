@@ -1,26 +1,44 @@
 
+process download_url {
+
+    executor 'local'
+    container null
+
+    tag { "${row.species}/${row.project}" }
+
+    input:
+        tuple val(row), val(url)
+    
+    output:
+        tuple val(row), path("genome.fa.gz")
+
+    """
+    wget ${url} -O genome.fa.gz
+    """
+}
 
 process gzip_to_bgzip {
 
-    publishDir "${params.output}/${row.out_dir}", mode: 'copy'
+    label = "sm"
+    publishDir "${row.out_dir}", mode: 'copy', pattern: "*fa.gz"
 
     input:
-        tuple val(row), path("genome_in.fa.gz")
+        tuple val(row), path(genome_in)
 
     output:
-        tuple val(row), path("${row.genome}.fa.gz")
+        tuple val(row.name), path("${row.genome}.fa"), emit: uncompressed
+        tuple val(row), path("${row.genome}.fa.gz"), emit: compressed
 
     """
-        gzip -dc genome_in.fa.gz > genome.fa
-        bgzip genome.fa
-        mv genome.fa.gz ${row.genome}.fa.gz
+    gzip -dc ${genome_in} > ${row.genome}.fa
+    bgzip ${row.genome}.fa -c > ${row.genome}.fa.gz # part of samtools
     """
-
 }
 
 process bwa_index {
 
-    publishDir "${params.output}/${row.out_dir}", mode: 'copy'
+    label = "sm"
+    publishDir "${row.out_dir}", mode: 'copy'
 
     input:
         tuple val(row), path("${row.genome}.fa.gz")
@@ -33,13 +51,14 @@ process bwa_index {
         path("${row.genome}.fa.gz.sa")
 
     """
-        bwa index ${row.genome}.fa.gz
+    bwa index ${row.genome}.fa.gz
     """
 }
 
 process samtools_faidx {
 
-    publishDir "${params.output}/${row.out_dir}", mode: 'copy'
+    label = "sm"
+    publishDir "${row.out_dir}", mode: 'copy'
 
     input:
         tuple val(row), path("${row.genome}.fa.gz")
@@ -49,13 +68,14 @@ process samtools_faidx {
         path("${row.genome}.fa.gz.gzi")
 
     """
-        samtools faidx ${row.genome}.fa.gz
+    samtools faidx ${row.genome}.fa.gz
     """
 }
 
 process create_sequence_dictionary {
 
-    publishDir "${params.output}/${row.out_dir}", mode: 'copy'
+    label = "sm"
+    publishDir "${row.out_dir}", mode: 'copy'
 
     input:
         tuple val(row), path("${row.genome}.fa.gz")

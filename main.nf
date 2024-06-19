@@ -18,7 +18,7 @@ assert nextflow.version.matches('23.0+')
 // Downloads
 include { download_url as download_genome;
           download_url as download_gtf;
-          download_url as download_gff3; } from './modules/download.module.nf'
+          download_url as download_gff3; } from './modules/genome.module.nf'
 
 // Genome
 include { gzip_to_bgzip } from './modules/genome.module.nf'
@@ -29,13 +29,12 @@ include { create_sequence_dictionary } from './modules/genome.module.nf'
 // Annotation
 include { snpeff_db } from './modules/annotation.module.nf'
 include { snpeff_db_manual } from './modules/annotation.module.nf'
-include { decompress as decompress_genome; } from './modules/annotation.module.nf'
 include { format_csq } from './modules/annotation.module.nf'
 include { format_csq_manual } from './modules/annotation.module.nf'
 include { extract_lcrs } from './modules/annotation.module.nf'
 
 // Constants
-WORMBASE_PREFIX = "ftp://ftp.wormbase.org/pub/wormbase"
+WORMBASE_PREFIX = "https://downloads.wormbase.org"
 
 /*
     Params
@@ -46,11 +45,13 @@ params.genome = null // set for manual genome not from wormbase
 params.gff = null // set for manual genome not from wormbase
 
 if(!params.output) {
-    params.output = "${workflow.launchDir}/genomes_test"
+    params.outputDir = "${workflow.launchDir}/genomes_test"
+} else {
+    params.outputDir = params.output
 }
 
 if(!params.genome) {
-    params.wb_version="WS276"
+    params.wb_version="WS290"
     params.projects="""c_elegans/PRJNA13758,c_briggsae/PRJNA10731,c_tropicalis/PRJNA53597"""
     project_list = params.projects.split(",")
 } else {
@@ -59,18 +60,6 @@ if(!params.genome) {
     project_list = null
 }
 
-
-def log_summary() {
-/*
-    Generates a log
-*/
-
-out = 
-out
-}
-
-
-log.info(log_summary())
 
 
 if (params.help) {
@@ -97,25 +86,21 @@ nextflow main.nf --projects c_elegans/PRJNA13758 --wb_version WS276
     --wb_version            wormbase version to build                      ${params.wb_version}
     --projects              comma-delimited list of `species/project_id`   ${params.projects}
     --genome                Path to manually curated genome                ${params.genome}
-    --output                Path of output folder                          ${params.output}
+    --output                Path of output folder                          ${params.outputDir}
 
     username                                                            ${"whoami".execute().in.text}
 
 """)
     exit 1
 } else {
-    log.info('''
+    log.info("""
 G E N O M E S - N F   P I P E L I N E
 ========================================
 wb_version =            ${params.wb_version}
 projects   =            ${params.projects}
 genome     =            ${params.genome}
-output     =            ${params.output}
-    ''')
-}
-
-if (params.debug){
-    exit 1
+output     =            ${params.outputDir}
+    """)
 }
 
 log.info "Genome Management"
@@ -126,38 +111,45 @@ workflow {
     if(!params.genome) {
         println "Downloading ${params.wb_version} --> ${project_list}"
 
-        fetch_projects()
+        Channel.of("${WORMBASE_PREFIX}") | fetch_projects
+
         genome_set = fetch_projects.out.splitCsv(header: true, sep: "\t")
                     .filter { project_list.contains("${it.species}/${it.project}") }
                     .map { row ->
                         // Create output directory stub
                         row.name = "${row.species}.${row.project}.${params.wb_version}"
-                        row.genome = "${row.name}.genome";
-                        row.out_dir = "${row.species}/genomes/${row.project}/${params.wb_version}";
+                        row.genome = "${row.name}.genomic";
+                        row.out_dir = "${params.outputDir}/${row.species}/genomes/${row.project}/${params.wb_version}";
                         row;
                     }
 
-    //     // Download genome and index
-    //     format_dl(genome_set, "genomic.fa.gz") | download_genome | gzip_to_bgzip | (bwa_index & samtools_faidx & create_sequence_dictionary)
+        // Download genome and index
+        genome_set.map { row -> [row, "${WORMBASE_PREFIX}/releases/${params.wb_version}/species/${row.species}/${row.project}/${row.species}.${row.project}.${params.wb_version}.genomic.fa.gz"] }
+            | download_genome | gzip_to_bgzip
+        gzip_to_bgzip.out.compressed | (samtools_faidx & bwa_index & create_sequence_dictionary)
 
-    //     // Download
-    //     format_dl(genome_set, "canonical_geneset.gtf.gz") | download_gtf
-    //     format_dl(genome_set, "annotations.gff3.gz") | download_gff3
+        // Download
+        genome_set.map { row -> [row, "${WORMBASE_PREFIX}/releases/${params.wb_version}/species/${row.species}/${row.project}/${row.species}.${row.project}.${params.wb_version}.canonical_geneset.gtf.gz"] }
+            | download_gtf
+        genome_set.map { row -> [row, "${WORMBASE_PREFIX}/releases/${params.wb_version}/species/${row.species}/${row.project}/${row.species}.${row.project}.${params.wb_version}.annotations.gff3.gz"] }
+            | download_gff3
 
-    //     /* SnpEff */
-    //     genome_eff = decompress_genome(download_genome.out).map { row, genome -> [row.name, row, genome] }
-    //     gtf_eff = download_gtf.out.map { row, gtf -> [row.name, gtf] }
-    //     genome_eff.join(gtf_eff)
-    //             .combine(Channel.fromPath(params.snpeff_config)) | snpeff_db
+        /* SnpEff */
+        genome_eff = download_genome.out
+            .map { row, genome -> [row.name, row] }
+            .join(gzip_to_bgzip.out.uncompressed)
+            .join(download_gtf.out
+                .map { row, gtf -> [row.name, gtf] })
+            .combine(Channel.fromPath(params.snpeff_config)) | snpeff_db
 
-    //     /* CSQ Annotations */
-    //     download_gff3.out | format_csq
+        /* CSQ Annotations */
+        download_gff3.out | format_csq
 
-    //     /* Extract LCRs and other annotations */
-    //     download_gff3.out | extract_lcrs
+        /* Extract LCRs and other annotations */
+        download_gff3.out | extract_lcrs
 
-    //     // get gene and transcript tracks for cendr (elegans only right now)
-    //     download_gff3.out | cendr_browser_tracks
+       // get gene and transcript tracks for cendr (elegans only right now)
+        download_gff3.out | cendr_browser_tracks
     // } else {
 
     //     // I apologize for how messy this part is... 
@@ -172,13 +164,14 @@ workflow {
     //         .map { row ->
     //             // Create output directory stub
     //             row.name = "${row.species}.${row.project}.${params.wb_version}"
-    //             row.genome = "${row.name}.genome";
+    //             row.genome = "${row.name}.genomic";
     //             row.out_dir = "${row.species}/genomes/${row.project}/${params.wb_version}";
     //             row;
     //         }
 
     //     // Index genome
-    //     genome_set.map {row -> row}.combine(Channel.fromPath("${params.genome}")) | gzip_to_bgzip | (bwa_index & samtools_faidx & create_sequence_dictionary)
+    //     genome_set.map {row -> row}.combine(Channel.fromPath("${params.genome}")) | gzip_to_bgzip
+    //     gzip_to_bgzip.out.compressed | (bwa_index & samtools_faidx & create_sequence_dictionary)
 
     //     /* SnpEff */
     //     decompress_genome(genome_set.map { row -> row }
@@ -203,46 +196,37 @@ workflow {
 process fetch_projects {
 
     executor 'local'
+    container null
 
-    publishDir "${params.output}/", mode: 'copy'
+    publishDir "${params.outputDir}/", mode: 'copy'
+
+    input:
+        val(WORMBASE_PREFIX)
 
     output:
         path("project_species.tsv")
 
     shell:
-    '''
+    """
     set -e
-    species=$(curl ${WORMBASE_PREFIX}/species/ | awk '{ print $9 }' | grep -v "README")
+    species=(`wget -q -O - ${WORMBASE_PREFIX}/species/ | grep folder | \\
+             awk '{split(\$0,A,"href=\\""); split(A[2], B, "/"); print B[1]}'`)
 
-    function fetch_projects {
-        species=${1}
-        curl "${WORMBASE_PREFIX}/species/${species}/" | \
-            awk -v OFS="\t" -v species=${species} '$9 ~ "^PR" { print species, $9 }'
-    }
-    export ${WORMBASE_PREFIX}
-    export -f fetch_projects
-    {
-        echo -e "species\tproject";
-        parallel --retry-failed -j 8 --verbose fetch_projects ::: ${species};
-    } > project_species.tsv
-    '''
-}
-
-def format_dl(ch, fname) {
-    ch.map { row ->
-    [row,
-     "${WORMBASE_PREFIX}/releases/${params.wb_version}/species/${row.species}/${row.project}/${row.species}.${row.project}.${params.wb_version}.${fname}"]
-    }
-}
-
-def download(ch, fname) {
-    ch.map { row ->
-        [row, 
-         format_url(row, fname)]
-    }
+    echo -e "species\\tproject" > project_species.tsv
+    for S in \${species[*]}; do
+        wget -q -O - ${WORMBASE_PREFIX}/species/\${S}/ | grep folder | \\
+            awk -v OFS="\\t" -v species=\${S} '{split(\$0,A,"href=\\""); split(A[2], B, "/"); \\
+                                                if (( B[1] ~ /^PR/ )) print species,B[1]}' >> project_species.tsv
+    done
+    """
 }
 
 process manual_setup {
+
+    executor "local"
+    container null
+
+    input:
 
 
     output:
@@ -257,12 +241,12 @@ process manual_setup {
 
 
 // download big bed file for gene and transcript tracks for CeNDR
-// looks like this file isonly currently supported for elegans and maybe briggsae but not tropicalis.
+// looks like this file isonly currently supported for elegans and briggsae but not tropicalis.
 process cendr_browser_tracks {
 
-    executor 'local'
+    label "sm"
 
-    publishDir "${params.output}/${row.out_dir}/browser_tracks/", mode: 'copy'
+    publishDir "${row.out_dir}/browser_tracks/", mode: 'copy'
 
     input:
         tuple val(row), path("gff")
@@ -271,41 +255,40 @@ process cendr_browser_tracks {
         tuple path("*.bed.gz"), path("*.bed.gz.tbi"), optional: true
 
     """
-    if [[ ${row.species} == 'c_elegans' ]];
+    if [[ ${row.species} != 'c_tropicalis' ]];
     then
 
-    function zip_index {
-        bgzip -f \${1}
-        tabix \${1}.gz
-    }
+        function zip_index {
+            bgzip -f \${1}
+            tabix \${1}.gz
+        }
 
-    # Generate the transcripts track; Confusingly, this track is derived from one called elegans_genes on wormbase.
-    # Add parenthetical gene name for transcripts.
+        species=`echo "${row.species}" | sed "s/c_//"`
 
-    # curl ftp://ftp.wormbase.org/pub/wormbase/releases/current-production-release/MULTI_SPECIES/hub/elegans/elegans_genes_${params.wb_version}.bb > gene_file.bb
-    wget -O gene_file.bb ${WORMBASE_PREFIX}/releases/${params.wb_version}/MULTI_SPECIES/hub/elegans/elegans_genes_${params.wb_version}.bb
-    bigBedToBed gene_file.bb tmp.bed
-    sortBed -i tmp.bed > elegans_transcripts_${params.wb_version}.bed
-    bgzip -f elegans_transcripts_${params.wb_version}.bed
-    tabix elegans_transcripts_${params.wb_version}.bed.gz
-    rm tmp.bed
+        # Generate the transcripts track; Confusingly, this track is derived from one called elegans_genes on wormbase.
+        # Add parenthetical gene name for transcripts.
 
-    # Generate Gene Track BED File 
-    gzip -dc ${gff} | \
-    grep 'locus' | \
-    awk '\$2 == "WormBase" && \$3 == "gene"' > temp.gff
-    sortBed -i temp.gff > sorted.gff
+        wget -O gene_file.bb ${WORMBASE_PREFIX}/releases/${params.wb_version}/MULTI_SPECIES/hub/\${species}/\${species}_genes_${params.wb_version}.bb
+        bigBedToBed gene_file.bb tmp.bed
+        sortBed -i tmp.bed > \${species}_transcripts_${params.wb_version}.bed
+        bgzip -f \${species}_transcripts_${params.wb_version}.bed
+        tabix \${species}_transcripts_${params.wb_version}.bed.gz
+        rm tmp.bed
 
-    # Install with conda install gawk
-    convert2bed --sort-tmpdir . -i gff < sorted.gff > final.bed
-    gawk -v OFS='\\t' '{ match(\$0, "locus=([^;\\t]+)", f); \$4=f[1]; print \$1, \$2, \$3, \$4, 100, \$6  }' final.bed | \
-    uniq > elegans_gene.${params.wb_version}.bed
-    zip_index elegans_gene.${params.wb_version}.bed
+        # Generate Gene Track BED File 
+        gzip -dc ${gff} | \
+        grep 'locus' | \
+        awk '\$2 == "WormBase" && \$3 == "gene"' > temp.gff
+        sortBed -i temp.gff > sorted.gff
+
+        # Install with conda install gawk
+        convert2bed --sort-tmpdir=./ -i gff - < sorted.gff > final.bed
+        gawk -v OFS='\\t' '{ match(\$0, "locus=([^;\\t]+)", f); \$4=f[1]; print \$1, \$2, \$3, \$4, 100, \$6  }' final.bed | \
+        uniq > \${species}_gene.${params.wb_version}.bed
+        zip_index \${species}_gene.${params.wb_version}.bed
 
     fi
-
     """
-
 }
 
 
