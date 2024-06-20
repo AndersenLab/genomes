@@ -39,7 +39,6 @@ WORMBASE_PREFIX = "https://downloads.wormbase.org"
 /*
     Params
 */
-//params.output="genomes"
 params.snpeff_config = "${workflow.projectDir}/data/snpeff_config_base.txt"
 params.genome = null // set for manual genome not from wormbase
 params.gff = null // set for manual genome not from wormbase
@@ -50,17 +49,23 @@ if(!params.output) {
     params.outputDir = params.output
 }
 
+
 if(!params.genome) {
     params.wb_version="WS290"
     params.projects="""c_elegans/PRJNA13758,c_briggsae/PRJNA10731,c_tropicalis/PRJNA53597"""
     project_list = params.projects.split(",")
+    params.project = null
 } else {
     params.wb_version=null
-    params.projects=null
+    params.project=null
     project_list = null
+    if (!params.project || !params.wb_version) {
+        log.info("If a genome parameter is specified, project and wb_version parameters must also be specified")
+        exit 1
+    }
+    params.species=params.genome.split('/')[-1]
+    params.projects="${params.species}/${params.project}"
 }
-
-
 
 if (params.help) {
     log.info('''
@@ -150,42 +155,41 @@ workflow {
 
        // get gene and transcript tracks for cendr (elegans only right now)
         download_gff3.out | cendr_browser_tracks
-    // } else {
+    } else {
+        myFile = file("${params.genome}")
+        println("Managing genome: ${myFile.getBaseName()}")
 
-    //     // I apologize for how messy this part is... 
+        // Setup genome files
+       Channel.of("${params.species}")
+            .combine(Channel.of("${params.project}")) | manual_setup
 
-    //     myFile = file("${params.genome}")
-    //     println("Managing genome: ${myFile.getBaseName()}")
+        genome_set = manual_setup.out.splitCsv(header: true, sep: "\t")
+            .map { row ->
+                // Create output directory stub
+                row.name = "${row.species}.${row.project}.${params.wb_version}"
+                row.genome = "${row.name}.genomic";
+                row.out_dir = "${params.outputDir}/${row.species}/genomes/${row.project}/${params.wb_version}";
+                row; }
 
-    //     // Setup genome files
-    //     manual_setup()
+        genome_set.combine(Channel.fromPath("${params.genome}")) | gzip_to_bgzip
+        gzip_to_bgzip.out.compressed | (bwa_index & samtools_faidx & create_sequence_dictionary)
 
-    //     genome_set = manual_setup.out.splitCsv(header: true, sep: "\t")
-    //         .map { row ->
-    //             // Create output directory stub
-    //             row.name = "${row.species}.${row.project}.${params.wb_version}"
-    //             row.genome = "${row.name}.genomic";
-    //             row.out_dir = "${row.species}/genomes/${row.project}/${params.wb_version}";
-    //             row;
-    //         }
 
-    //     // Index genome
-    //     genome_set.map {row -> row}.combine(Channel.fromPath("${params.genome}")) | gzip_to_bgzip
-    //     gzip_to_bgzip.out.compressed | (bwa_index & samtools_faidx & create_sequence_dictionary)
+        if (params.gff) {
+            /* SnpEff */
+            genome_set
+                .map{ row -> [row.name, row] }
+                .join(gzip_to_bgzip.out.uncompressed)
+                .combine(Channel.fromPath("${params.gff}"))// gff 
+                .combine(Channel.fromPath(params.snpeff_config)) | snpeff_db_manual 
+            
+            /* CSQ Annotations */
+            genome_set
+                .combine(Channel.fromPath("${params.gff}")) | format_csq_manual
+        }
 
-    //     /* SnpEff */
-    //     decompress_genome(genome_set.map { row -> row }
-    //         .combine(Channel.fromPath("${params.genome}")))
-    //         .map { row, genome -> [row.name, row, genome] }
-    //         .combine(Channel.fromPath("${params.gff}"))// gff 
-    //         .combine(Channel.fromPath(params.snpeff_config)) | snpeff_db_manual 
-
-    //     /* CSQ Annotations */
-    //     genome_set.map { row -> row }
-    //         .combine(Channel.fromPath("${params.gff}")) | format_csq_manual
-
-    //     /* Extract LCRs and other annotations */
-    //     // we don't have this!
+        /* Extract LCRs and other annotations */
+        // we don't have this!
     }
 
     
@@ -227,14 +231,14 @@ process manual_setup {
     container null
 
     input:
-
+        tuple val(species), val(project)
 
     output:
         file("setup_file.txt")
 
     """
     echo -e "species\tproject" > setup_file.txt
-    echo "${params.species}\t${params.projects}" >> setup_file.txt
+    echo "${species}\t${project}" >> setup_file.txt
     """
 }
 

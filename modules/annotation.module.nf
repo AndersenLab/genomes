@@ -1,7 +1,7 @@
 
 process snpeff_db {
 
-    label = "sm"
+    label = "ml"
     tag { "${row.name}" }
 
     publishDir "${row.out_dir}/snpeff", mode: 'copy'
@@ -38,7 +38,7 @@ process snpeff_db {
 // aa length currently doesn't work unless c.e. need to potentially change gff for other species
 process format_csq {
 
-    label = "sm"
+    label = "ml"
     tag { "${row.name}" }
 
     /*
@@ -109,9 +109,8 @@ process format_csq_manual {
         Generate a GFF file for CSQ annotation by BCFTools
     */
 
-    label = "sm"
-    publishDir "${params.outputDir}/${row.out_dir}/csq", mode: 'copy'
-    // publishDir "${params.outputDir}/csq", mode: 'copy' // use for debug test
+    label = "ml"
+    publishDir "${row.out_dir}/csq", mode: 'copy'
 
     input:
         tuple val("row"), path("gff_file")
@@ -147,9 +146,8 @@ process format_csq_manual {
 // use gff instead of gtf to create snpeff config manually
 process snpeff_db_manual {
 
-    label = "sm"
-    publishDir "${params.outputDir}/${row.out_dir}/snpeff", mode: 'copy'
-    // publishDir "${params.outputDir}/snpeff", mode: 'copy' // use for debug test
+    label = "ml"
+    publishDir "${row.out_dir}/snpeff", mode: 'copy'
 
     input:
         tuple val(name), val(row), \
@@ -190,7 +188,7 @@ process extract_lcrs {
         RepeatMasker
     */
 
-    label = "sm"
+    label = "ml"
     publishDir "${row.out_dir}/lcr", mode: 'copy'
 
     input:
