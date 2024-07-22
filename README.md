@@ -23,7 +23,7 @@ source activate /data/eande106/software/conda_envs/nf23_env
 
 ### Relevant Docker Images
 
-* `andersenlab/nemascan` ([link](https://hub.docker.com/r/andersenlab/genomes-nf)): Docker image is created within this pipeline using GitHub actions. Whenever a change is made to `env/genomes.Dockerfile` or `.github/workflows/build.yml` GitHub actions will create a new docker image and push if successful.
+* `andersenlab/genomes` ([link](https://hub.docker.com/r/andersenlab/genomes-nf)): Docker image is created within this pipeline using GitHub actions. Whenever a change is made to `env/genomes.Dockerfile` or `.github/workflows/build.yml` GitHub actions will create a new docker image and push if successful.
 
 Make sure that you add the following code to your `~/.bash_profile`. This line makes sure that any singularity images you download will go to a shared location on `/vast/eande106` for other users to take advantage of (without them also having to download the same image).
 
